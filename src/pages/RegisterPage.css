@@ -1,0 +1,106 @@
+.register-page {
+  min-height: 100vh;
+  background-color: #f3f3f3;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+}
+
+.register-box {
+  width: 100%;
+  max-width: 720px;
+  text-align: center;
+}
+
+.register-title {
+  font-size: 52px;
+  font-weight: 700;
+  margin: 0 0 18px;
+  color: #111;
+}
+
+.register-subtitle {
+  font-size: 16px;
+  color: #7a7a7a;
+  margin: 0 0 42px;
+}
+
+.register-form {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.input-group {
+  margin-bottom: 26px;
+}
+
+.input-group label {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2d7a74;
+  margin-bottom: 12px;
+}
+
+.input-group input {
+  width: 100%;
+  border: none;
+  border-bottom: 1.5px solid #cfcfcf;
+  background: transparent;
+  padding: 10px 0;
+  font-size: 16px;
+  outline: none;
+}
+
+.register-btn {
+  width: 250px;
+  height: 46px;
+  display: block;
+  margin: 36px auto 16px;
+  border: none;
+  border-radius: 12px;
+  background-color: #0a9200;
+  color: white;
+  font-size: 22px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.switch-login {
+  margin-top: 8px;
+  font-size: 15px;
+  color: #333;
+  text-align: center;
+}
+
+.switch-login a {
+  color: #1a19ff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+
+.form-error {
+  color: #d93025;
+  font-size: 14px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.form-success {
+  color: #0a9200;
+  font-size: 14px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.password-hint {
+  font-size: 13px;
+  color: #777;
+  margin-top: 6px;
+}
