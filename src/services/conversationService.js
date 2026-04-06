@@ -1,4 +1,5 @@
 import axios from "axios";
+import { normalizeUserEntity } from "../utils/userNormalizer";
 
 const BASE_URL = "https://be-chatbox-1.onrender.com";
 const API_URL = `${BASE_URL}/api/conversations`;
@@ -10,16 +11,7 @@ const getAuthHeaders = () => {
   };
 };
 
-const normalizeUser = (user) => {
-  if (!user || typeof user !== "object") return user;
-
-  return {
-    ...user,
-    id: user.user_id || user.id || user._id,
-    name: user.name || "",
-    email: user.email || ""
-  };
-};
+const normalizeUser = (user) => normalizeUserEntity(user);
 
 const normalizeConversation = (conversation) => {
   if (!conversation || typeof conversation !== "object") return conversation;

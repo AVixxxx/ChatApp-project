@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { loginUser } from "../services/authService";
+import { saveAuthUserToStorage } from "../utils/userNormalizer";
 import facebookIcon from "../assets/icons/facebook.png";
 import googleIcon from "../assets/icons/google.png";
 import appleIcon from "../assets/icons/apple.png";
@@ -40,7 +41,7 @@ function LoginPage() {
       const data = await loginUser({ email, password });
 
       localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      saveAuthUserToStorage(data.user);
 
       setSuccess("Login successful. Redirecting...");
 

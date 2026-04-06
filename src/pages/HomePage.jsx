@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "./HomePage.css";
 import socket from "../socket";
 import {
@@ -10,6 +11,18 @@ import {
   sendMessage
 } from "../services/messageService";
 import { getMe, getFriends } from "../services/userService";
+import {
+  getAvatarUrl,
+  getStoredAuthUser,
+  normalizeUserEntity,
+  saveAuthUserToStorage
+} from "../utils/userNormalizer";
+import {
+  GROUP_AVATAR_URL,
+  GROUP_INFO_MEMBER_AVATAR_URL,
+  GROUP_PICKER_MEMBER_AVATAR_URL,
+  MESSAGE_SENDER_AVATAR_URL
+} from "../constants/avatar";
 import {
   FaComments,
   FaPhoneAlt,
@@ -50,7 +63,8 @@ const getUserId = (userEntity) => {
 };
 
 function HomePage() {
-  const [user, setUser] = useState(null);
+  const navigate = useNavigate();
+  const [user, setUser] = useState(() => getStoredAuthUser());
   const [conversations, setConversations] = useState([]);
   const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -123,6 +137,21 @@ function HomePage() {
       ) || conversation.members?.[0];
 
     return otherMember?.name || "Unknown User";
+  };
+
+  const getConversationAvatar = (conversation) => {
+    if (!conversation) return getAvatarUrl(null);
+
+    if (conversation.isGroup) {
+      return getAvatarUrl(conversation, GROUP_AVATAR_URL);
+    }
+
+    const otherMember =
+      conversation.members?.find(
+        (member) => getUserId(member) && getUserId(member) !== user?.id
+      ) || conversation.members?.[0];
+
+    return getAvatarUrl(otherMember, getAvatarUrl(user));
   };
 
   const updateConversationWithNewMessage = (message) => {
@@ -221,7 +250,9 @@ function HomePage() {
     const fetchUser = async () => {
       try {
         const me = await getMe();
-        setUser(me);
+        const normalizedMe = normalizeUserEntity(me);
+        setUser(normalizedMe);
+        saveAuthUserToStorage(normalizedMe);
       } catch (error) {
         console.error("Failed to fetch user:", error);
       }
@@ -369,12 +400,17 @@ function HomePage() {
       .includes(searchTerm.toLowerCase().trim())
   );
 
+  const sidebarAvatar = getAvatarUrl(user);
+  const headerAvatar = selectedConversation
+    ? getConversationAvatar(selectedConversation)
+    : getAvatarUrl(user);
+
   return (
     <div className="chat-layout">
       <div className="sidebar">
         <div className="user-info">
           <img
-            src="https://i.pravatar.cc/70?img=12"
+            src={sidebarAvatar}
             alt="avatar"
             className="avatar"
           />
@@ -409,7 +445,7 @@ function HomePage() {
             <span>Work</span>
           </div>
 
-          <div className="bottom-tool">
+          <div className="bottom-tool" onClick={() => navigate("/profile")}>
             <FaCog />
             <span>Setting</span>
           </div>
@@ -434,11 +470,6 @@ function HomePage() {
           <p className="empty-text">No matching conversations.</p>
         ) : (
           filteredConversations.map((conversation) => {
-            const otherMember =
-              conversation.members?.find(
-                (member) => getUserId(member) && getUserId(member) !== user?.id
-              ) || conversation.members?.[0];
-
             return (
               <div
                 key={conversation.id}
@@ -447,10 +478,7 @@ function HomePage() {
                 }`}
                 onClick={() => setSelectedConversationId(conversation.id)}
               >
-                <img
-                  src={otherMember?.avatar || "https://i.pravatar.cc/45?img=13"}
-                  alt="conversation"
-                />
+                <img src={getConversationAvatar(conversation)} alt="conversation" />
                 <div className="conversation-content">
                   <div className="conversation-top">
                     <h4>{getConversationDisplayName(conversation)}</h4>
@@ -472,9 +500,7 @@ function HomePage() {
         <div className="chat-header">
           <div className="chat-header-left">
             <img
-              src={
-                selectedOtherMember?.avatar || "https://i.pravatar.cc/45?img=13"
-              }
+              src={headerAvatar}
               alt="selected user"
               className="chat-user-avatar"
             />
@@ -531,7 +557,7 @@ function HomePage() {
                 >
                   {!isMe && (
                     <img
-                      src="https://i.pravatar.cc/38?img=13"
+                      src={getAvatarUrl(message.sender, MESSAGE_SENDER_AVATAR_URL)}
                       alt="sender"
                       className="message-avatar"
                     />
@@ -732,7 +758,7 @@ function HomePage() {
                   return (
                     <div key={member.id} className="group-info-member-row">
                       <img
-                        src={member.avatar || "https://i.pravatar.cc/40?img=18"}
+                        src={getAvatarUrl(member, GROUP_INFO_MEMBER_AVATAR_URL)}
                         alt={member.name}
                         className="group-info-member-avatar"
                       />
@@ -789,7 +815,7 @@ function HomePage() {
                         onChange={() => toggleGroupMember(member.id)}
                       />
                       <img
-                        src={member.avatar || "https://i.pravatar.cc/40?img=15"}
+                        src={getAvatarUrl(member, GROUP_PICKER_MEMBER_AVATAR_URL)}
                         alt={member.name}
                         className="group-member-avatar"
                       />

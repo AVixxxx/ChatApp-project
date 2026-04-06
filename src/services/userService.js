@@ -1,4 +1,5 @@
 import axios from "axios";
+import { normalizeUserEntity } from "../utils/userNormalizer";
 
 const BASE_URL = "https://be-chatbox-1.onrender.com";
 const AUTH_API_URL = `${BASE_URL}/api/auth`;
@@ -11,16 +12,7 @@ const getAuthHeaders = () => {
   };
 };
 
-const normalizeUser = (user) => {
-  if (!user || typeof user !== "object") return user;
-
-  return {
-    ...user,
-    id: user.user_id || user.id || user._id,
-    name: user.name || "",
-    email: user.email || ""
-  };
-};
+const normalizeUser = (user) => normalizeUserEntity(user);
 
 export const getMe = async () => {
   const response = await axios.get(`${AUTH_API_URL}/me`, {
@@ -42,4 +34,40 @@ export const getFriends = async () => {
   return Array.isArray(response.data)
     ? response.data.map(normalizeUser)
     : [];
+};
+
+export const updateMe = async (payload, avatarFile = null) => {
+  const payloadWithServerKeys = {
+    ...payload,
+    username: payload?.name ?? payload?.username
+  };
+
+  const cleanedPayload = Object.fromEntries(
+    Object.entries(payloadWithServerKeys).filter(([, value]) => value !== undefined)
+  );
+
+  if (avatarFile) {
+    const formData = new FormData();
+    Object.entries(cleanedPayload).forEach(([key, value]) => {
+      formData.append(key, value ?? "");
+    });
+    formData.append("avatar", avatarFile);
+
+    const response = await axios.put(`${AUTH_API_URL}/update`, formData, {
+      headers: {
+        ...getAuthHeaders(),
+        "Content-Type": "multipart/form-data"
+      }
+    });
+
+    return normalizeUser(response.data?.user || response.data);
+  }
+
+  const response = await axios.put(`${AUTH_API_URL}/update`, cleanedPayload, {
+    headers: {
+      ...getAuthHeaders()
+    }
+  });
+
+  return normalizeUser(response.data?.user || response.data);
 };

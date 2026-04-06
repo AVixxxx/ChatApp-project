@@ -56,7 +56,7 @@ function RegisterPage() {
         password: password,
         phone: "",                   
         avatar: "",
-        is_online: false,
+        is_online: true,
         create_at: new Date().toISOString()
       });
 
@@ -112,7 +112,7 @@ function RegisterPage() {
               onChange={handleChange}
             />
             <p className="password-hint">
-              6-18 characters, include A-Z, a-z, number and @
+              Password must be 6-18 characters and include a number
             </p>
           </div>
 
