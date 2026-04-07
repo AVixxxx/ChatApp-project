@@ -94,7 +94,6 @@ function ProfilePage() {
       const updated = await updateMe(
         {
           name: form.name,
-          email: form.email,
           phone: form.phone
         },
         avatarFile
@@ -201,7 +200,7 @@ function ProfilePage() {
                   type="email"
                   name="email"
                   value={form.email}
-                  onChange={handleFieldChange}
+                  readOnly
                   placeholder="Nhập email"
                 />
               </label>
