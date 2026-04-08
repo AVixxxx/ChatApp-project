@@ -1,6 +1,13 @@
 import { FaComments, FaPhoneAlt, FaAddressBook, FaCloudUploadAlt, FaBriefcase, FaCog } from "react-icons/fa";
 
-function Sidebar({ avatarUrl, userName, onOpenProfile }) {
+function Sidebar({
+  avatarUrl,
+  userName,
+  onOpenProfile,
+  onOpenMessages,
+  onOpenContacts,
+  activeMenu = "messages"
+}) {
   return (
     <div className="sidebar">
       <div className="user-info">
@@ -9,7 +16,10 @@ function Sidebar({ avatarUrl, userName, onOpenProfile }) {
       </div>
 
       <div className="menu">
-        <div className="menu-item active">
+        <div
+          className={`menu-item ${activeMenu === "messages" ? "active" : ""}`}
+          onClick={onOpenMessages}
+        >
           <FaComments className="menu-icon" />
           <span>Message</span>
         </div>
@@ -19,7 +29,10 @@ function Sidebar({ avatarUrl, userName, onOpenProfile }) {
           <span>Calls</span>
         </div>
 
-        <div className="menu-item">
+        <div
+          className={`menu-item ${activeMenu === "contacts" ? "active" : ""}`}
+          onClick={onOpenContacts}
+        >
           <FaAddressBook className="menu-icon" />
           <span>Contacts</span>
         </div>

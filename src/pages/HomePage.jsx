@@ -4,7 +4,8 @@ import "./HomePage.css";
 import socket from "../socket";
 import {
   getConversations,
-  createGroupConversation
+  createGroupConversation,
+  createPrivateConversation
 } from "../services/conversationService";
 import {
   getMessagesByConversation,
@@ -40,6 +41,10 @@ const getUserId = (userEntity) => {
   if (typeof userEntity === "string") return userEntity;
   return userEntity.id || userEntity.user_id || userEntity._id;
 };
+
+const getVirtualConversationId = (friendId) => `friend-${friendId}`;
+const isVirtualConversationId = (conversationId) =>
+  typeof conversationId === "string" && conversationId.startsWith("friend-");
 
 function HomePage() {
   const navigate = useNavigate();
@@ -131,6 +136,44 @@ function HomePage() {
       ) || conversation.members?.[0];
 
     return getAvatarUrl(otherMember, getAvatarUrl(user));
+  };
+
+  const mergeConversationsWithFriends = (conversationList, friendList) => {
+    const safeConversations = Array.isArray(conversationList) ? conversationList : [];
+    const safeFriends = Array.isArray(friendList) ? friendList : [];
+
+    const existingFriendIds = new Set();
+
+    safeConversations.forEach((conversation) => {
+      if (conversation?.isGroup) return;
+
+      const otherMember = conversation.members?.find(
+        (member) => getUserId(member) && getUserId(member) !== user?.id
+      );
+
+      const otherMemberId = getUserId(otherMember);
+      if (otherMemberId) {
+        existingFriendIds.add(otherMemberId);
+      }
+    });
+
+    const virtualConversations = safeFriends
+      .filter((friend) => {
+        const friendId = getUserId(friend);
+        return friendId && !existingFriendIds.has(friendId);
+      })
+      .map((friend) => ({
+        id: getVirtualConversationId(getUserId(friend)),
+        isGroup: false,
+        isVirtual: true,
+        friendId: getUserId(friend),
+        members: [friend],
+        lastMessage: null,
+        lastMessageTime: null,
+        updatedAt: null
+      }));
+
+    return [...safeConversations, ...virtualConversations];
   };
 
   const updateConversationWithNewMessage = (message) => {
@@ -267,11 +310,20 @@ function HomePage() {
   useEffect(() => {
     const fetchConversations = async () => {
       try {
-        const data = await getConversations();
-        setConversations(data);
+        const [conversationData, friendData] = await Promise.all([
+          getConversations(),
+          getFriends()
+        ]);
 
-        if (data.length > 0) {
-          setSelectedConversationId(data[0].id);
+        const mergedConversations = mergeConversationsWithFriends(
+          conversationData,
+          friendData
+        );
+
+        setConversations(mergedConversations);
+
+        if (mergedConversations.length > 0) {
+          setSelectedConversationId(mergedConversations[0].id);
         }
       } catch (error) {
         console.error("Failed to load conversations:", error);
@@ -282,13 +334,20 @@ function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedConversationId) return;
+    if (!selectedConversationId || isVirtualConversationId(selectedConversationId)) {
+      return;
+    }
     socket.emit("join_conversation", selectedConversationId);
   }, [selectedConversationId]);
 
   useEffect(() => {
     const fetchMessages = async () => {
       if (!selectedConversationId) {
+        setMessages([]);
+        return;
+      }
+
+      if (isVirtualConversationId(selectedConversationId)) {
         setMessages([]);
         return;
       }
@@ -339,8 +398,34 @@ function HomePage() {
     if (!newMessage.trim() || !selectedConversationId) return;
 
     try {
+      let targetConversationId = selectedConversationId;
+
+      if (isVirtualConversationId(targetConversationId)) {
+        const selectedVirtualConversation = conversations.find(
+          (conversation) => conversation.id === selectedConversationId
+        );
+        const friendId = selectedVirtualConversation?.friendId;
+
+        if (!friendId) {
+          console.error("Missing friend id for virtual conversation");
+          return;
+        }
+
+        const createdConversation = await createPrivateConversation([friendId]);
+
+        setConversations((prev) => {
+          const filtered = prev.filter(
+            (conversation) => conversation.id !== selectedConversationId
+          );
+          return [createdConversation, ...filtered];
+        });
+
+        setSelectedConversationId(createdConversation.id);
+        targetConversationId = createdConversation.id;
+      }
+
       const sentMessage = await sendMessage({
-        conversationId: selectedConversationId,
+        conversationId: targetConversationId,
         text: newMessage
       });
 
@@ -398,6 +483,9 @@ function HomePage() {
       <Sidebar
         avatarUrl={sidebarAvatar}
         userName={user?.name}
+        activeMenu="messages"
+        onOpenMessages={() => navigate("/home")}
+        onOpenContacts={() => navigate("/contacts")}
         onOpenProfile={() => navigate("/profile")}
       />
 
