@@ -1,0 +1,197 @@
+.add-friend-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1600;
+  padding: 12px;
+}
+
+.add-friend-modal {
+  width: min(100%, 520px);
+  min-height: 620px;
+  background: #f6f7f8;
+  border-radius: 8px;
+  border: 1px solid #d6d6d6;
+  display: flex;
+  flex-direction: column;
+}
+
+.add-friend-modal-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid #d7d7d7;
+}
+
+.add-friend-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2e52;
+  text-transform: lowercase;
+}
+
+.add-friend-modal-header h3::first-letter {
+  text-transform: uppercase;
+}
+
+.add-friend-close {
+  border: none;
+  background: transparent;
+  color: #22345a;
+  font-size: 25px;
+  cursor: pointer;
+}
+
+.add-friend-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 14px 18px 6px;
+}
+
+.add-friend-input {
+  flex: 1;
+  height: 42px;
+  border: none;
+  border-bottom: 2px solid #2f72ff;
+  background: transparent;
+  font-size: 16px;
+  color: #1f2e52;
+  outline: none;
+}
+
+.add-friend-input::placeholder {
+  color: #6a7997;
+}
+
+.add-friend-suggest-label {
+  margin: 8px 18px 4px;
+  font-size: 15px;
+  color: #4e5f80;
+}
+
+.add-friend-result-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 16px 8px;
+}
+
+.add-friend-hint {
+  margin: 0;
+  padding: 10px 4px;
+  font-size: 14px;
+  color: #617189;
+}
+
+.add-friend-hint.error {
+  color: #be1f1f;
+}
+
+.add-friend-result-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px;
+  border-radius: 12px;
+}
+
+.add-friend-result-item:hover {
+  background: #e9edf3;
+}
+
+.add-friend-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.add-friend-result-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.add-friend-result-content h4 {
+  margin: 0;
+  font-size: 16px;
+  color: #1d2e54;
+}
+
+.add-friend-result-content p {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: #5f6f89;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-friend-action {
+  min-width: 110px;
+  height: 38px;
+  border: 1px solid #1e67f0;
+  border-radius: 6px;
+  background: #f7fbff;
+  color: #0d58dd;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.add-friend-action:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.add-friend-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px 16px;
+  border-top: 1px solid #d7d7d7;
+}
+
+.add-friend-cancel,
+.add-friend-search {
+  min-width: 124px;
+  height: 44px;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.add-friend-cancel {
+  background: #e5e5e5;
+  color: #2d4069;
+}
+
+.add-friend-search {
+  background: #1268f5;
+  color: #fff;
+}
+
+@media (max-width: 860px) {
+  .add-friend-modal {
+    min-height: 540px;
+  }
+
+  .add-friend-modal-header h3,
+  .add-friend-input,
+  .add-friend-suggest-label,
+  .add-friend-hint,
+  .add-friend-result-content h4,
+  .add-friend-result-content p,
+  .add-friend-action,
+  .add-friend-cancel,
+  .add-friend-search {
+    font-size: 16px;
+  }
+}

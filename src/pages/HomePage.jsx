@@ -11,6 +11,8 @@ import {
   getMessagesByConversation,
   sendMessage
 } from "../services/messageService";
+import { findAccount } from "../services/authService";
+import { sendFriendRequest } from "../services/friendService";
 import { getMe, getFriends } from "../services/userService";
 import {
   getAvatarUrl,
@@ -30,6 +32,7 @@ import ChatWindow from "../components/chat/ChatWindow";
 import RightPanel from "../components/chat/RightPanel";
 import GroupModal from "../components/chat/GroupModal";
 import GroupInfoModal from "../components/chat/GroupInfoModal";
+import AddFriendModal from "../components/chat/AddFriendModal";
 
 const getEntityId = (entity) => {
   if (!entity || typeof entity !== "object") return null;
@@ -170,6 +173,12 @@ function HomePage() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
+  const [addFriendKeyword, setAddFriendKeyword] = useState("");
+  const [addFriendResults, setAddFriendResults] = useState([]);
+  const [addFriendError, setAddFriendError] = useState("");
+  const [isSearchingAddFriend, setIsSearchingAddFriend] = useState(false);
+  const [sendingAddFriendId, setSendingAddFriendId] = useState("");
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
   const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
@@ -718,6 +727,144 @@ function HomePage() {
   const getGroupPickerMemberAvatar = (member) =>
     getAvatarUrl(member, GROUP_PICKER_MEMBER_AVATAR_URL);
 
+  const openAddFriendModal = () => {
+    setIsAddFriendModalOpen(true);
+    setAddFriendKeyword("");
+    setAddFriendResults([]);
+    setAddFriendError("");
+  };
+
+  const closeAddFriendModal = () => {
+    if (isSearchingAddFriend || sendingAddFriendId) return;
+    setIsAddFriendModalOpen(false);
+    setAddFriendKeyword("");
+    setAddFriendResults([]);
+    setAddFriendError("");
+  };
+
+  const getSearchMode = (rawValue) => {
+    const value = String(rawValue || "").trim();
+    if (!value) return "none";
+    if (value.includes("@")) return "email";
+
+    const digitsOnly = value.replace(/[^0-9]/g, "");
+    if (digitsOnly && digitsOnly.length >= 6) return "phone";
+    return "invalid";
+  };
+
+  const buildSearchResult = (candidate) => {
+    const normalized = normalizeUserEntity(candidate);
+    const candidateId = getSafeId(getUserId(normalized || candidate));
+    if (!candidateId || candidateId === getSafeId(user?.id)) return null;
+
+    return {
+      ...normalized,
+      id: candidateId,
+      avatar: getAvatarUrl(normalized),
+      email: normalized?.email || candidate?.email || "",
+      phone:
+        normalized?.phone ||
+        normalized?.phone_number ||
+        candidate?.phone ||
+        candidate?.phone_number ||
+        ""
+    };
+  };
+
+  const searchUsersWithApi = async (input, mode) => {
+    const normalizedValue = String(input || "").trim();
+    const rawCandidates = [];
+
+    if (mode === "phone") {
+      const digits = normalizedValue.replace(/[^0-9]/g, "");
+      const variants = Array.from(
+        new Set([digits, `+${digits}`, `+84${digits.replace(/^0/, "")}`])
+      ).filter(Boolean);
+
+      for (const value of variants) {
+        try {
+          const result = await findAccount(value);
+          rawCandidates.push(result);
+        } catch {
+          // Try next phone format
+        }
+      }
+    } else {
+      const result = await findAccount(normalizedValue);
+      rawCandidates.push(result);
+    }
+
+    const flattened = rawCandidates.flatMap((item) =>
+      Array.isArray(item) ? item : item ? [item] : []
+    );
+
+    return flattened
+      .map(buildSearchResult)
+      .filter(Boolean)
+      .filter(
+        (item, index, self) =>
+          index === self.findIndex((entry) => getSafeId(entry.id) === getSafeId(item.id))
+      );
+  };
+
+  const handleSearchAddFriend = async () => {
+    const rawKeyword = String(addFriendKeyword || "").trim();
+    const mode = getSearchMode(rawKeyword);
+
+    if (!rawKeyword) {
+      setAddFriendResults([]);
+      setAddFriendError("Vui lòng nhập số điện thoại hoặc email");
+      return;
+    }
+
+    if (mode === "invalid") {
+      setAddFriendResults([]);
+      setAddFriendError("Vui lòng nhập số điện thoại hoặc email hợp lệ");
+      return;
+    }
+
+    const keywordForSearch =
+      mode === "phone" ? rawKeyword.replace(/[^0-9]/g, "") : rawKeyword;
+
+    try {
+      setIsSearchingAddFriend(true);
+      setAddFriendError("");
+
+      const results = await searchUsersWithApi(keywordForSearch, mode);
+      setAddFriendResults(results);
+
+      if (results.length === 0) {
+        setAddFriendError("Không tìm thấy người dùng");
+      }
+    } catch {
+      setAddFriendResults([]);
+      setAddFriendError("Không thể tìm kiếm lúc này");
+    } finally {
+      setIsSearchingAddFriend(false);
+    }
+  };
+
+  const handleAddFriendFromSearch = async (receiverId) => {
+    if (!receiverId) return;
+
+    try {
+      setSendingAddFriendId(String(receiverId));
+      setAddFriendError("");
+      await sendFriendRequest(receiverId);
+      setAddFriendResults((prev) =>
+        prev.filter((item) => getSafeId(item.id) !== getSafeId(receiverId))
+      );
+    } catch (requestError) {
+      setAddFriendError(
+        requestError?.response?.data?.message ||
+          requestError?.response?.data?.error ||
+          "Could not send friend request"
+      );
+    } finally {
+      setSendingAddFriendId("");
+    }
+  };
+
   const getDirectChatStatusInfo = (conversation) => {
     if (!conversation || conversation.isGroup) {
       return {
@@ -761,6 +908,8 @@ function HomePage() {
       <ConversationList
         searchTerm={searchTerm}
         onSearchTermChange={setSearchTerm}
+        onOpenAddFriend={openAddFriendModal}
+        onOpenCreateGroup={openGroupModal}
         conversations={conversations}
         filteredConversations={filteredConversations}
         selectedConversationId={selectedConversationId}
@@ -817,6 +966,19 @@ function HomePage() {
         getGroupMemberAvatar={getGroupPickerMemberAvatar}
         handleCreateGroup={handleCreateGroup}
         isCreatingGroup={isCreatingGroup}
+      />
+
+      <AddFriendModal
+        isOpen={isAddFriendModalOpen}
+        keyword={addFriendKeyword}
+        onKeywordChange={setAddFriendKeyword}
+        results={addFriendResults}
+        error={addFriendError}
+        isSearching={isSearchingAddFriend}
+        sendingId={sendingAddFriendId}
+        onClose={closeAddFriendModal}
+        onSearch={handleSearchAddFriend}
+        onAddFriend={handleAddFriendFromSearch}
       />
     </div>
   );

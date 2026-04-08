@@ -1,21 +1,24 @@
 .register-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: linear-gradient(125deg, #1c1f6f 0%, #4a1b7a 52%, #0f5a95 100%);
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 28px 18px;
+  overflow: hidden;
 }
 
 .register-box {
   width: 100%;
   max-width: 640px;
+  max-height: calc(100dvh - 56px);
   text-align: center;
   background: rgba(255, 255, 255, 0.96);
   border-radius: 16px;
   box-shadow: 0 16px 44px rgba(10, 15, 40, 0.32);
   padding: 34px 34px 30px;
   backdrop-filter: blur(2px);
+  overflow-y: auto;
 }
 
 .register-logo {
@@ -138,12 +141,20 @@
 }
 
 @media (max-width: 640px) {
+  .register-page {
+    align-items: flex-start;
+    padding: 14px 10px;
+    overflow-y: auto;
+  }
+
   .register-box {
+    max-height: none;
     padding: 26px 18px 22px;
+    border-radius: 14px;
   }
 
   .register-title {
-    font-size: 32px;
+    font-size: clamp(26px, 8vw, 32px);
   }
 
   .register-btn {

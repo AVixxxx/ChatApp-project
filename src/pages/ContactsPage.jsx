@@ -21,6 +21,7 @@ import {
   saveAuthUserToStorage
 } from "../utils/userNormalizer";
 import { prefetchHomeConversationsCache } from "../utils/homeConversationCache";
+import socket from "../socket";
 import "./HomePage.css";
 import "./ContactsPage.css";
 
@@ -62,7 +63,7 @@ const writeContactsCache = ({ contacts, requests, activeTab }) => {
       })
     );
   } catch {
-    // Ignore cache write failures.
+
   }
 };
 
@@ -82,6 +83,18 @@ function ContactsPage() {
     () => !(cachedContactsState?.contacts?.length > 0)
   );
   const friendsListRef = useRef(null);
+
+  const refreshFriendData = async (userId) => {
+    if (!userId) return;
+
+    const [friendData, requestData] = await Promise.all([
+      getFriendList(userId),
+      getFriendRequests(userId)
+    ]);
+
+    setContacts(friendData);
+    setRequests(requestData);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -162,6 +175,21 @@ function ContactsPage() {
   }, [user?.id]);
 
   useEffect(() => {
+    const handleNotification = (payload) => {
+      if (!payload || payload.type !== "FRIEND_ACCEPTED") return;
+      refreshFriendData(user?.id).catch((error) => {
+        console.error("Failed to refresh friend data after socket event:", error);
+      });
+    };
+
+    socket.on("notification", handleNotification);
+
+    return () => {
+      socket.off("notification", handleNotification);
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
     writeContactsCache({ contacts, requests, activeTab });
   }, [contacts, requests, activeTab]);
 
@@ -215,34 +243,19 @@ function ContactsPage() {
   }, [requests, searchTerm]);
 
   const pendingIncomingRequestCount = useMemo(
-    () => requests.filter((request) => request.type === "incoming").length,
+    () =>
+      requests.filter(
+        (request) =>
+          request.type === "incoming" &&
+          (request.status || "").toLowerCase() === "pending"
+      ).length,
     [requests]
   );
 
   const handleAcceptRequest = async (requestId) => {
     try {
       await acceptFriendRequest(requestId);
-
-      const acceptedRequest = requests.find(
-        (request) => (request.relationId || request.id) === requestId
-      );
-      if (acceptedRequest) {
-        setContacts((prev) => [
-          ...prev,
-          {
-            id: acceptedRequest.id,
-            name: acceptedRequest.name,
-            avatar: acceptedRequest.avatar,
-            isOnline: acceptedRequest.isOnline ?? false,
-            relationId: acceptedRequest.relationId || requestId,
-            raw: acceptedRequest.raw
-          }
-        ]);
-      }
-
-      setRequests((prev) =>
-        prev.filter((request) => (request.relationId || request.id) !== requestId)
-      );
+      await refreshFriendData(user?.id);
     } catch (error) {
       console.error("Failed to accept request:", error);
     }
@@ -251,9 +264,7 @@ function ContactsPage() {
   const handleDeclineRequest = async (requestId) => {
     try {
       await declineFriendRequest(requestId);
-      setRequests((prev) =>
-        prev.filter((request) => (request.relationId || request.id) !== requestId)
-      );
+      await refreshFriendData(user?.id);
     } catch (error) {
       console.error("Failed to decline request:", error);
     }

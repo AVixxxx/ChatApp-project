@@ -1,8 +1,10 @@
-import { FaSearch } from "react-icons/fa";
+import { FaSearch, FaUserPlus, FaUsers } from "react-icons/fa";
 
 function ConversationList({
   searchTerm,
   onSearchTermChange,
+  onOpenAddFriend,
+  onOpenCreateGroup,
   conversations,
   filteredConversations,
   selectedConversationId,
@@ -15,15 +17,33 @@ function ConversationList({
 }) {
   return (
     <div className="conversation-list">
-      <div className="search-box">
-        <FaSearch className="search-icon" />
-        <input
-          type="text"
-          placeholder="Search"
-          className="search-input"
-          value={searchTerm}
-          onChange={(e) => onSearchTermChange(e.target.value)}
-        />
+      <div className="conversation-search-toolbar">
+        <div className="search-box">
+          <FaSearch className="search-icon" />
+          <input
+            type="text"
+            placeholder="Search chats..."
+            className="search-input"
+            value={searchTerm}
+            onChange={(e) => onSearchTermChange(e.target.value)}
+          />
+        </div>
+        <button
+          type="button"
+          className="search-action-btn"
+          title="Add Friend"
+          onClick={onOpenAddFriend}
+        >
+          <FaUserPlus />
+        </button>
+        <button
+          type="button"
+          className="search-action-btn"
+          title="Create Group"
+          onClick={onOpenCreateGroup}
+        >
+          <FaUsers />
+        </button>
       </div>
 
       {conversations.length === 0 ? (

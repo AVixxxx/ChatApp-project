@@ -97,13 +97,21 @@
   overflow: hidden;
 }
 
-.search-box {
+.conversation-search-toolbar {
   margin: 0 16px 16px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-box {
+  margin: 0;
+  flex: 1;
   background: #f0d8cf;
   border-radius: 10px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 10px 0 12px;
   height: 42px;
 }
 
@@ -119,6 +127,114 @@
   background: transparent;
   outline: none;
   font-size: 14px;
+}
+
+.search-action-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #3f3f3f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: transform 0.15s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.search-action-btn:hover {
+  transform: translateY(-1px);
+  background: #2f72ff;
+  color: #fff;
+}
+
+.search-results-panel {
+  padding: 0 10px;
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
+}
+
+.search-loading {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #666;
+  font-size: 13px;
+}
+
+.loading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #d6d6d6;
+  border-top-color: #2f72ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.search-result-item {
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background-color 0.15s ease;
+}
+
+.search-result-item:hover {
+  background: #ececec;
+}
+
+.search-result-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.search-result-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-result-content h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.search-result-content p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-add-btn {
+  border: none;
+  border-radius: 8px;
+  background: #2f72ff;
+  color: #fff;
+  height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.search-add-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .conversation {

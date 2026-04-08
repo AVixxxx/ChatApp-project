@@ -157,3 +157,19 @@ export const removeFriend = async (friendId) => {
 
   return response.data;
 };
+
+export const sendFriendRequest = async (receiverId) => {
+  const response = await axios.post(
+    `${FRIENDS_API_URL}/request`,
+    {
+      receiverId
+    },
+    {
+      headers: {
+        ...getAuthHeaders()
+      }
+    }
+  );
+
+  return response.data;
+};
