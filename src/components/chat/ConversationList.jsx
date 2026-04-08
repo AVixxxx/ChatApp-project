@@ -1,0 +1,60 @@
+import { FaSearch } from "react-icons/fa";
+
+function ConversationList({
+  searchTerm,
+  onSearchTermChange,
+  conversations,
+  filteredConversations,
+  selectedConversationId,
+  onSelectConversation,
+  getConversationAvatar,
+  getConversationDisplayName,
+  formatConversationTime,
+  getConversationPreview
+}) {
+  return (
+    <div className="conversation-list">
+      <div className="search-box">
+        <FaSearch className="search-icon" />
+        <input
+          type="text"
+          placeholder="Search"
+          className="search-input"
+          value={searchTerm}
+          onChange={(e) => onSearchTermChange(e.target.value)}
+        />
+      </div>
+
+      {conversations.length === 0 ? (
+        <p className="empty-text">No conversations yet.</p>
+      ) : filteredConversations.length === 0 ? (
+        <p className="empty-text">No matching conversations.</p>
+      ) : (
+        filteredConversations.map((conversation) => (
+          <div
+            key={conversation.id}
+            className={`conversation ${
+              selectedConversationId === conversation.id ? "selected" : ""
+            }`}
+            onClick={() => onSelectConversation(conversation.id)}
+          >
+            <img src={getConversationAvatar(conversation)} alt="conversation" />
+            <div className="conversation-content">
+              <div className="conversation-top">
+                <h4>{getConversationDisplayName(conversation)}</h4>
+                <span className="conversation-time">
+                  {formatConversationTime(conversation.lastMessageTime)}
+                </span>
+              </div>
+              <div className="conversation-bottom">
+                <p>{getConversationPreview(conversation)}</p>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+export default ConversationList;
