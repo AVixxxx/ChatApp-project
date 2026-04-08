@@ -42,15 +42,116 @@ const getUserId = (userEntity) => {
   return userEntity.id || userEntity.user_id || userEntity._id;
 };
 
+const getUserDisplayName = (userEntity) => {
+  if (!userEntity) return "Unknown User";
+
+  if (typeof userEntity === "string") {
+    return `User ${userEntity.slice(0, 6)}`;
+  }
+
+  const normalized = normalizeUserEntity(userEntity);
+  if (normalized?.name && normalized.name.trim()) {
+    return normalized.name.trim();
+  }
+
+  const fallbackId = getUserId(userEntity);
+  if (fallbackId) {
+    return `User ${String(fallbackId).slice(0, 6)}`;
+  }
+
+  return "Unknown User";
+};
+
 const getVirtualConversationId = (friendId) => `friend-${friendId}`;
 const isVirtualConversationId = (conversationId) =>
   typeof conversationId === "string" && conversationId.startsWith("friend-");
 
+const getSafeId = (value) => {
+  if (!value) return "";
+  return String(value);
+};
+
+const HOME_CONVERSATIONS_CACHE_KEY = "homeConversationsCacheV1";
+const HOME_CONVERSATIONS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const readHomeConversationsCache = () => {
+  try {
+    const raw = sessionStorage.getItem(HOME_CONVERSATIONS_CACHE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+
+    const timestamp = Number(parsed.timestamp || 0);
+    if (!timestamp || Date.now() - timestamp > HOME_CONVERSATIONS_CACHE_TTL_MS) {
+      return null;
+    }
+
+    return {
+      conversations: Array.isArray(parsed.conversations) ? parsed.conversations : [],
+      selectedConversationId: parsed.selectedConversationId || null
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeHomeConversationsCache = ({ conversations, selectedConversationId }) => {
+  try {
+    sessionStorage.setItem(
+      HOME_CONVERSATIONS_CACHE_KEY,
+      JSON.stringify({
+        conversations,
+        selectedConversationId,
+        timestamp: Date.now()
+      })
+    );
+  } catch {
+    // Ignore cache write failures (private mode/quota issues)
+  }
+};
+
+const getConversationFingerprint = (conversation) => {
+  if (!conversation || typeof conversation !== "object") return "";
+
+  const lastUpdated =
+    conversation.updatedAt ||
+    conversation.lastMessageTime ||
+    conversation.last_message_time ||
+    conversation.lastMessage?.createdAt ||
+    conversation.lastMessage?.created_at ||
+    "";
+
+  return `${conversation.id}|${lastUpdated}`;
+};
+
+const isConversationListEquivalent = (currentList, incomingList) => {
+  if (!Array.isArray(currentList) || !Array.isArray(incomingList)) return false;
+  if (currentList.length !== incomingList.length) return false;
+
+  for (let index = 0; index < currentList.length; index += 1) {
+    if (
+      getConversationFingerprint(currentList[index]) !==
+      getConversationFingerprint(incomingList[index])
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 function HomePage() {
   const navigate = useNavigate();
   const [user, setUser] = useState(() => getStoredAuthUser());
-  const [conversations, setConversations] = useState([]);
-  const [selectedConversationId, setSelectedConversationId] = useState(null);
+  const [conversations, setConversations] = useState(() => {
+    const cached = readHomeConversationsCache();
+    return cached?.conversations || [];
+  });
+  const [selectedConversationId, setSelectedConversationId] = useState(() => {
+    const cached = readHomeConversationsCache();
+    return cached?.selectedConversationId || null;
+  });
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -137,7 +238,7 @@ function HomePage() {
         (member) => getUserId(member) && getUserId(member) !== user?.id
       ) || conversation.members?.[0];
 
-    return otherMember?.name || "Unknown User";
+    return getUserDisplayName(otherMember);
   };
 
   const getConversationAvatar = (conversation) => {
@@ -157,18 +258,62 @@ function HomePage() {
 
   const mergeConversationsWithFriends = (conversationList, friendList) => {
     const safeConversations = Array.isArray(conversationList) ? conversationList : [];
-    const safeFriends = Array.isArray(friendList) ? friendList : [];
+    const safeFriends = Array.isArray(friendList)
+      ? friendList.map((friend) => normalizeUserEntity(friend))
+      : [];
+
+    const friendDirectory = new Map(
+      safeFriends
+        .map((friend) => [getSafeId(getUserId(friend)), friend])
+        .filter(([friendId]) => Boolean(friendId))
+    );
+
+    const allowedFriendIds = new Set(friendDirectory.keys());
+
+    const sanitizedConversations = safeConversations
+      .map((conversation) => {
+        if (conversation?.isGroup) return conversation;
+
+        const otherMember = conversation.members?.find(
+          (member) => getUserId(member) && getUserId(member) !== user?.id
+        );
+
+        const otherMemberId = getSafeId(getUserId(otherMember));
+        if (!otherMemberId || !allowedFriendIds.has(otherMemberId)) {
+          return null;
+        }
+
+        const friendProfile = friendDirectory.get(otherMemberId);
+        const hydratedMembers = Array.isArray(conversation.members)
+          ? conversation.members.map((member) => {
+              const memberId = getSafeId(getUserId(member));
+              if (memberId === otherMemberId) {
+                return {
+                  ...member,
+                  ...friendProfile
+                };
+              }
+              return member;
+            })
+          : [friendProfile];
+
+        return {
+          ...conversation,
+          members: hydratedMembers
+        };
+      })
+      .filter(Boolean);
 
     const existingFriendIds = new Set();
 
-    safeConversations.forEach((conversation) => {
+    sanitizedConversations.forEach((conversation) => {
       if (conversation?.isGroup) return;
 
       const otherMember = conversation.members?.find(
         (member) => getUserId(member) && getUserId(member) !== user?.id
       );
 
-      const otherMemberId = getUserId(otherMember);
+      const otherMemberId = getSafeId(getUserId(otherMember));
       if (otherMemberId) {
         existingFriendIds.add(otherMemberId);
       }
@@ -176,21 +321,21 @@ function HomePage() {
 
     const virtualConversations = safeFriends
       .filter((friend) => {
-        const friendId = getUserId(friend);
+        const friendId = getSafeId(getUserId(friend));
         return friendId && !existingFriendIds.has(friendId);
       })
       .map((friend) => ({
-        id: getVirtualConversationId(getUserId(friend)),
+        id: getVirtualConversationId(getSafeId(getUserId(friend))),
         isGroup: false,
         isVirtual: true,
-        friendId: getUserId(friend),
+        friendId: getSafeId(getUserId(friend)),
         members: [friend],
         lastMessage: null,
         lastMessageTime: null,
         updatedAt: null
       }));
 
-    return [...safeConversations, ...virtualConversations];
+    return [...sanitizedConversations, ...virtualConversations];
   };
 
   const updateConversationWithNewMessage = (message) => {
@@ -325,6 +470,10 @@ function HomePage() {
   }, []);
 
   useEffect(() => {
+    writeHomeConversationsCache({ conversations, selectedConversationId });
+  }, [conversations, selectedConversationId]);
+
+  useEffect(() => {
     const fetchConversations = async () => {
       try {
         const [conversationData, friendData] = await Promise.all([
@@ -337,11 +486,19 @@ function HomePage() {
           friendData
         );
 
-        setConversations(mergedConversations);
+        setConversations((prev) =>
+          isConversationListEquivalent(prev, mergedConversations)
+            ? prev
+            : mergedConversations
+        );
 
-        if (mergedConversations.length > 0) {
-          setSelectedConversationId(mergedConversations[0].id);
-        }
+        setSelectedConversationId((prev) => {
+          if (prev && mergedConversations.some((conversation) => conversation.id === prev)) {
+            return prev;
+          }
+
+          return mergedConversations[0]?.id || null;
+        });
       } catch (error) {
         console.error("Failed to load conversations:", error);
       }
@@ -469,6 +626,12 @@ function HomePage() {
       (member) => getUserId(member) && getUserId(member) !== user?.id
     ) || selectedConversation?.members?.[0];
 
+  const selectedConversationDisplayName = selectedConversation
+    ? selectedConversation.isGroup
+      ? selectedConversation.groupName || "Unnamed Group"
+      : getUserDisplayName(selectedOtherMember)
+    : "No conversation selected";
+
   const selectedGroupMembersList = selectedConversation?.isGroup
     ? selectedConversation.members || []
     : [];
@@ -495,8 +658,13 @@ function HomePage() {
   const getGroupPickerMemberAvatar = (member) =>
     getAvatarUrl(member, GROUP_PICKER_MEMBER_AVATAR_URL);
 
-  const getDirectChatStatusText = (conversation) => {
-    if (!conversation || conversation.isGroup) return "";
+  const getDirectChatStatusInfo = (conversation) => {
+    if (!conversation || conversation.isGroup) {
+      return {
+        text: "",
+        className: "offline"
+      };
+    }
 
     const otherMember =
       conversation.members?.find(
@@ -509,8 +677,13 @@ function HomePage() {
       otherMember?.online ??
       false;
 
-    return isOnline ? "Online" : "Offline";
+    return {
+      text: isOnline ? "Online" : "Offline",
+      className: isOnline ? "online" : "offline"
+    };
   };
+
+  const selectedStatusInfo = getDirectChatStatusInfo(selectedConversation);
 
   return (
     <div className="chat-layout">
@@ -532,15 +705,19 @@ function HomePage() {
         onSelectConversation={setSelectedConversationId}
         getConversationAvatar={getConversationAvatar}
         getConversationDisplayName={getConversationDisplayName}
+        getConversationStatusText={(conversation) =>
+          getDirectChatStatusInfo(conversation)?.text || "Offline"
+        }
         formatConversationTime={formatConversationTime}
         getConversationPreview={getConversationPreview}
       />
 
       <ChatWindow
         selectedConversation={selectedConversation}
-        selectedOtherMember={selectedOtherMember}
+        selectedConversationDisplayName={selectedConversationDisplayName}
         selectedGroupMemberCount={selectedGroupMemberCount}
-        headerStatusText={getDirectChatStatusText(selectedConversation)}
+        headerStatusText={selectedStatusInfo?.text || "Offline"}
+        headerStatusClass={selectedStatusInfo?.className || "offline"}
         headerAvatar={headerAvatar}
         setShowGroupInfoModal={setShowGroupInfoModal}
         selectedConversationId={selectedConversationId}

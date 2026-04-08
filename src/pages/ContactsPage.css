@@ -218,8 +218,33 @@
   color: #888;
 }
 
+.contact-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contact-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ef4444;
+}
+
 .contact-status.online {
   color: #16a34a;
+}
+
+.contact-status.online .contact-status-dot {
+  background: #16a34a;
+}
+
+.contact-status.offline {
+  color: #dc2626;
+}
+
+.contact-status.offline .contact-status-dot {
+  background: #dc2626;
 }
 
 .contact-actions {

@@ -8,6 +8,7 @@ import {
   normalizeUserEntity,
   saveAuthUserToStorage
 } from "../utils/userNormalizer";
+import { prefetchHomeConversationsCache } from "../utils/homeConversationCache";
 import "./ProfilePage.css";
 
 const toFormState = (user) => ({
@@ -55,6 +56,10 @@ function ProfilePage() {
 
     syncUser();
   }, []);
+
+  useEffect(() => {
+    prefetchHomeConversationsCache(user?.id);
+  }, [user?.id]);
 
   useEffect(() => {
     return () => {

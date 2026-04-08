@@ -1,5 +1,6 @@
 import axios from "axios";
 import { DEFAULT_AVATAR_URL } from "../constants/avatar";
+import { getAvatarUrl, normalizeUserEntity } from "../utils/userNormalizer";
 
 const BASE_URL = "https://be-chatbox-1.onrender.com";
 const FRIENDS_API_URL = `${BASE_URL}/api/friends`;
@@ -29,6 +30,16 @@ const fetchIncomingFriendRequests = async () => {
   });
 
   return Array.isArray(response.data) ? response.data : [];
+};
+
+const parseOnlineStatus = (value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "online";
+  }
+  return false;
 };
 
 export const normalizeFriend = (friendRequest, currentUserId) => {
@@ -68,6 +79,14 @@ export const normalizeFriend = (friendRequest, currentUserId) => {
   const fallbackName = friendRequest.username || friendRequest.name;
   const status = friendRequest.status || friendRequest.request_status || "pending";
   const safeFriendId = String(friendId || "unkno");
+  const normalizedFriend = normalizeUserEntity({
+    ...friendRequest,
+    id: safeFriendId,
+    user_id: safeFriendId
+  });
+  const isOnline = parseOnlineStatus(
+    friendRequest.is_online ?? friendRequest.isOnline ?? friendRequest.online
+  );
 
   return {
     id: safeFriendId,
@@ -76,9 +95,9 @@ export const normalizeFriend = (friendRequest, currentUserId) => {
     receiverId,
     status,
     type,
-    name: fallbackName || `User ${safeFriendId.slice(0, 5)}`,
-    avatar: DEFAULT_AVATAR_URL,
-    isOnline: false,
+    name: normalizedFriend?.name || fallbackName || `User ${safeFriendId.slice(0, 5)}`,
+    avatar: getAvatarUrl(normalizedFriend, DEFAULT_AVATAR_URL),
+    isOnline,
     raw: friendRequest
   };
 };

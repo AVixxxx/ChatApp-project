@@ -9,6 +9,7 @@ function ConversationList({
   onSelectConversation,
   getConversationAvatar,
   getConversationDisplayName,
+  getConversationStatusText,
   formatConversationTime,
   getConversationPreview
 }) {
@@ -48,6 +49,18 @@ function ConversationList({
               </div>
               <div className="conversation-bottom">
                 <p>{getConversationPreview(conversation)}</p>
+                {!conversation.isGroup && (
+                  <span
+                    className={`conversation-status ${
+                      getConversationStatusText(conversation) === "Online"
+                        ? "online"
+                        : "offline"
+                    }`}
+                  >
+                    <span className="status-dot" aria-hidden="true" />
+                    {getConversationStatusText(conversation)}
+                  </span>
+                )}
               </div>
             </div>
           </div>

@@ -28,10 +28,20 @@ const resolveAvatar = (entity) => {
 export const normalizeUserEntity = (user) => {
   if (!user || typeof user !== "object") return user;
 
+  const resolvedName =
+    user.name ||
+    user.username ||
+    user.fullName ||
+    user.full_name ||
+    user.displayName ||
+    user.display_name ||
+    user.nickname ||
+    "";
+
   return {
     ...user,
     id: user.user_id || user.id || user._id,
-    name: user.name || user.username || user.fullName || "",
+    name: resolvedName,
     email: user.email || "",
     avatar: resolveAvatar(user)
   };

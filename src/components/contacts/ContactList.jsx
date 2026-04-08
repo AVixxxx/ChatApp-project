@@ -6,7 +6,7 @@ const getGroupKey = (name) => {
   return /[A-Z]/.test(firstChar) ? firstChar : "#";
 };
 
-function ContactList({ contacts, onMessage, onViewProfile, onRemove }) {
+function ContactList({ contacts, listRef, onMessage, onViewProfile, onRemove }) {
   if (!contacts.length) {
     return <p className="contacts-empty">Không có bạn bè nào.</p>;
   }
@@ -25,7 +25,12 @@ function ContactList({ contacts, onMessage, onViewProfile, onRemove }) {
   });
 
   return (
-    <div className="contacts-list">
+    <div
+      ref={listRef}
+      className="contacts-list"
+      tabIndex={-1}
+      aria-label="Friend list"
+    >
       {sortedKeys.map((key) => (
         <div key={key} className="contact-group">
           <h4 className="contact-group-title">{key}</h4>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/chat/Sidebar";
 import ContactsSidebar from "../components/contacts/ContactsSidebar";
@@ -20,41 +20,160 @@ import {
   normalizeUserEntity,
   saveAuthUserToStorage
 } from "../utils/userNormalizer";
+import { prefetchHomeConversationsCache } from "../utils/homeConversationCache";
 import "./HomePage.css";
 import "./ContactsPage.css";
 
+const CONTACTS_CACHE_KEY = "contactsPageCacheV1";
+const CONTACTS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const readContactsCache = () => {
+  try {
+    const raw = sessionStorage.getItem(CONTACTS_CACHE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+
+    const timestamp = Number(parsed.timestamp || 0);
+    if (!timestamp || Date.now() - timestamp > CONTACTS_CACHE_TTL_MS) {
+      return null;
+    }
+
+    return {
+      contacts: Array.isArray(parsed.contacts) ? parsed.contacts : [],
+      requests: Array.isArray(parsed.requests) ? parsed.requests : [],
+      activeTab: typeof parsed.activeTab === "string" ? parsed.activeTab : "friends"
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeContactsCache = ({ contacts, requests, activeTab }) => {
+  try {
+    sessionStorage.setItem(
+      CONTACTS_CACHE_KEY,
+      JSON.stringify({
+        contacts,
+        requests,
+        activeTab,
+        timestamp: Date.now()
+      })
+    );
+  } catch {
+    // Ignore cache write failures.
+  }
+};
+
 function ContactsPage() {
+  const cachedContactsState = readContactsCache();
   const navigate = useNavigate();
   const [user, setUser] = useState(() => getStoredAuthUser());
-  const [contacts, setContacts] = useState([]);
-  const [requests, setRequests] = useState([]);
-  const [activeTab, setActiveTab] = useState("friends");
+  const [contacts, setContacts] = useState(() => cachedContactsState?.contacts || []);
+  const [requests, setRequests] = useState(() => cachedContactsState?.requests || []);
+  const [activeTab, setActiveTab] = useState(
+    () => cachedContactsState?.activeTab || "friends"
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [sortType, setSortType] = useState("asc");
   const [filterType, setFilterType] = useState("all");
+  const [isContactsLoading, setIsContactsLoading] = useState(
+    () => !(cachedContactsState?.contacts?.length > 0)
+  );
+  const friendsListRef = useRef(null);
 
   useEffect(() => {
+    let mounted = true;
+
+    const loadFriends = async (userId) => {
+      if (!userId) {
+        if (mounted) setIsContactsLoading(false);
+        return;
+      }
+
+      try {
+        const friendData = await getFriendList(userId);
+        if (mounted) {
+          setContacts(friendData);
+        }
+      } catch (error) {
+        console.error("Failed to load friend list:", error);
+      } finally {
+        if (mounted) {
+          setIsContactsLoading(false);
+        }
+      }
+    };
+
+    const loadRequests = async (userId) => {
+      if (!userId) return;
+
+      try {
+        const requestData = await getFriendRequests(userId);
+        if (mounted) {
+          setRequests(requestData);
+        }
+      } catch (error) {
+        console.error("Failed to load friend requests:", error);
+      }
+    };
+
     const bootstrap = async () => {
       try {
+        const cachedUser = getStoredAuthUser();
+
+        if (cachedUser?.id) {
+          setUser(cachedUser);
+          loadFriends(cachedUser.id);
+          loadRequests(cachedUser.id);
+        }
+
         const me = await getMe();
         const normalized = normalizeUserEntity(me);
+
+        if (!mounted) return;
+
         setUser(normalized);
         saveAuthUserToStorage(normalized);
 
-        const [friendData, requestData] = await Promise.all([
-          getFriendList(normalized?.id),
-          getFriendRequests(normalized?.id)
-        ]);
-
-        setContacts(friendData);
-        setRequests(requestData);
+        if (!cachedUser?.id || cachedUser.id !== normalized?.id) {
+          setIsContactsLoading(true);
+          loadFriends(normalized?.id);
+          loadRequests(normalized?.id);
+        }
       } catch (error) {
         console.error("Failed to load contacts page data:", error);
+        if (mounted) {
+          setIsContactsLoading(false);
+        }
       }
     };
 
     bootstrap();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  useEffect(() => {
+    prefetchHomeConversationsCache(user?.id);
+  }, [user?.id]);
+
+  useEffect(() => {
+    writeContactsCache({ contacts, requests, activeTab });
+  }, [contacts, requests, activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "friends") return;
+
+    const timer = window.setTimeout(() => {
+      friendsListRef.current?.focus();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeTab, contacts.length]);
 
   const filteredContacts = useMemo(() => {
     const keyword = searchTerm.toLowerCase().trim();
@@ -114,7 +233,7 @@ function ContactsPage() {
             id: acceptedRequest.id,
             name: acceptedRequest.name,
             avatar: acceptedRequest.avatar,
-            isOnline: false,
+            isOnline: acceptedRequest.isOnline ?? false,
             relationId: acceptedRequest.relationId || requestId,
             raw: acceptedRequest.raw
           }
@@ -168,9 +287,14 @@ function ContactsPage() {
 
   const renderMainContent = () => {
     if (activeTab === "friends") {
+      if (isContactsLoading) {
+        return <p className="contacts-placeholder">Dang tai danh sach ban be...</p>;
+      }
+
       return (
         <ContactList
           contacts={filteredContacts}
+          listRef={friendsListRef}
           onMessage={handleMessageFriend}
           onViewProfile={handleViewProfile}
           onRemove={handleRemoveFriend}

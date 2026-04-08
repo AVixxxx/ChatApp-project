@@ -4,9 +4,10 @@ import MessageInput from "./MessageInput";
 
 function ChatWindow({
   selectedConversation,
-  selectedOtherMember,
+  selectedConversationDisplayName,
   selectedGroupMemberCount,
   headerStatusText,
+  headerStatusClass,
   headerAvatar,
   setShowGroupInfoModal,
   selectedConversationId,
@@ -28,11 +29,7 @@ function ChatWindow({
           <div>
             <div className="group-title-row">
               <h3>
-                {selectedConversation
-                  ? selectedConversation.isGroup
-                    ? selectedConversation.groupName || "Unnamed Group"
-                    : selectedOtherMember?.name || "Unknown User"
-                  : "No conversation selected"}
+                {selectedConversationDisplayName}
               </h3>
 
               {selectedConversation?.isGroup && (
@@ -42,7 +39,16 @@ function ChatWindow({
               )}
             </div>
 
-            <span>
+            <span
+              className={
+                selectedConversation?.isGroup
+                  ? "chat-member-count"
+                  : `chat-user-status ${headerStatusClass || "offline"}`
+              }
+            >
+              {!selectedConversation?.isGroup && (
+                <span className="status-dot" aria-hidden="true" />
+              )}
               {selectedConversation?.isGroup
                 ? `${selectedGroupMemberCount} members`
                 : headerStatusText || "Offline"}

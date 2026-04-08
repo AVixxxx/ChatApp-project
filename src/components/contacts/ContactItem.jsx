@@ -9,6 +9,7 @@ function ContactItem({ contact, onMessage, onViewProfile, onRemove }) {
         <div>
           <p className="contact-name">{contact.name || "Unknown User"}</p>
           <span className={`contact-status ${contact.isOnline ? "online" : "offline"}`}>
+            <span className="contact-status-dot" aria-hidden="true" />
             {contact.isOnline ? "Online" : "Offline"}
           </span>
         </div>
