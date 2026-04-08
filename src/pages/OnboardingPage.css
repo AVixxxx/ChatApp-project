@@ -1,0 +1,233 @@
+.onboarding-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  position: relative;
+  background: linear-gradient(95deg, #ececf1 0%, #bbbcd0 28%, #262760 51%, #15162e 100%);
+}
+
+.onboarding-logo-top {
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 146px;
+  z-index: 2;
+}
+
+.onboarding-left,
+.onboarding-right {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 56px;
+}
+
+.onboarding-left-inner {
+  max-width: 560px;
+}
+
+.onboarding-left h1 {
+  margin: 0 0 20px;
+  font-size: clamp(46px, 5.2vw, 84px);
+  line-height: 1.06;
+  letter-spacing: -1px;
+  color: #040404;
+}
+
+.onboarding-left p {
+  margin: 0;
+  color: #111;
+  font-size: clamp(24px, 2.2vw, 48px);
+  line-height: 1.14;
+  max-width: 620px;
+}
+
+.onboarding-right-inner {
+  width: 100%;
+  max-width: 460px;
+  text-align: center;
+}
+
+.onboarding-right h2 {
+  margin: 0 0 38px;
+  color: #f8f8f8;
+  font-size: clamp(42px, 4.3vw, 70px);
+  line-height: 1.06;
+  letter-spacing: -0.5px;
+}
+
+.onboarding-socials {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.social-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: #14161f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.social-circle:hover {
+  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.social-circle:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 2px;
+}
+
+.social-icon {
+  width: 40px;
+  height: auto;
+  max-height: 40px;
+  object-fit: contain;
+  display: block;
+}
+
+.onboarding-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+  color: #d7d7d7;
+}
+
+.onboarding-divider span {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.onboarding-divider strong {
+  font-size: 30px;
+  font-weight: 500;
+}
+
+.signup-mail-btn {
+  width: 100%;
+  height: 64px;
+  border: none;
+  border-radius: 18px;
+  background: #f2f2f2;
+  color: #0f1715;
+  font-size: 40px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.signup-mail-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  background: #ffffff;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.26);
+}
+
+.signup-mail-btn:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+.login-text {
+  margin-top: 24px;
+  color: #bdc0d0;
+  font-size: 40px;
+}
+
+.login-text button {
+  border: none;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  font-weight: 600;
+  position: relative;
+  transition: color 0.2s ease, text-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.login-text button::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 100%;
+  height: 2px;
+  background: #ffffff;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.2s ease;
+}
+
+.login-text button:hover {
+  color: #f8fbff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.45);
+  transform: translateY(-1px);
+}
+
+.login-text button:hover::after {
+  transform: scaleX(1);
+}
+
+.login-text button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.8);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1024px) {
+  .onboarding-page {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-logo-top {
+    top: 16px;
+    width: 120px;
+  }
+
+  .onboarding-left,
+  .onboarding-right {
+    padding: 40px 22px;
+  }
+
+  .onboarding-left h1 {
+    font-size: 48px;
+    text-align: center;
+  }
+
+  .onboarding-left p {
+    font-size: 24px;
+    text-align: center;
+  }
+
+  .onboarding-right h2 {
+    font-size: 46px;
+  }
+
+  .signup-mail-btn,
+  .login-text,
+  .onboarding-divider strong {
+    font-size: 28px;
+  }
+
+  .social-circle {
+    width: 70px;
+    height: 70px;
+  }
+
+  .social-icon {
+    width: 36px;
+    max-height: 36px;
+  }
+}

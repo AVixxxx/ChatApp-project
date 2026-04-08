@@ -1,7 +1,31 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { registerUser } from "../services/authService";
+import {
+  loginUser,
+  requestRegistrationOtp,
+  verifyRegisterWithOtp
+} from "../services/authService";
+import { saveAuthUserToStorage } from "../utils/userNormalizer";
+import OtpModal from "../components/auth/OtpModal";
 import "./RegisterPage.css";
+
+const getApiErrorMessage = (err, fallbackMessage) => {
+  const responseData = err?.response?.data;
+
+  if (typeof responseData === "string" && responseData.trim()) {
+    return responseData;
+  }
+
+  if (responseData?.message) {
+    return responseData.message;
+  }
+
+  if (responseData?.error) {
+    return responseData.error;
+  }
+
+  return fallbackMessage;
+};
 
 function RegisterPage() {
   const navigate = useNavigate();
@@ -15,6 +39,12 @@ function RegisterPage() {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isResendingOtp, setIsResendingOtp] = useState(false);
+  const [pendingRegisterData, setPendingRegisterData] = useState(null);
 
   const handleChange = (e) => {
     setFormData((prev) => ({
@@ -27,6 +57,7 @@ function RegisterPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
+    setOtpError("");
 
     const { name, email, password, confirmPassword } = formData;
 
@@ -49,34 +80,88 @@ function RegisterPage() {
       return;
     }
 
+    const payload = {
+      username: name,
+      email,
+      password,
+      phone: "",
+      avatar: "",
+      is_online: true,
+      create_at: new Date().toISOString()
+    };
+
     try {
-      await registerUser({
-        username: name,              
-        email: email,
-        password: password,
-        phone: "",                   
-        avatar: "",
-        is_online: true,
-        create_at: new Date().toISOString()
+      setIsSubmitting(true);
+      await requestRegistrationOtp(payload);
+      setPendingRegisterData(payload);
+      setIsOtpModalOpen(true);
+      setSuccess("OTP da duoc gui. Vui long kiem tra email.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Register failed."));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCloseOtpModal = () => {
+    if (isVerifyingOtp || isResendingOtp) return;
+    setIsOtpModalOpen(false);
+    setOtpError("");
+  };
+
+  const handleResendOtp = async () => {
+    if (!pendingRegisterData) return;
+
+    try {
+      setOtpError("");
+      setIsResendingOtp(true);
+      await requestRegistrationOtp(pendingRegisterData);
+      setSuccess("Da gui lai OTP thanh cong.");
+    } catch (err) {
+      setOtpError(getApiErrorMessage(err, "Khong the gui lai OTP."));
+    } finally {
+      setIsResendingOtp(false);
+    }
+  };
+
+  const handleConfirmOtp = async (otp) => {
+    if (!pendingRegisterData) return;
+
+    try {
+      setOtpError("");
+      setIsVerifyingOtp(true);
+
+      await verifyRegisterWithOtp({
+        email: pendingRegisterData.email,
+        otp
       });
 
-      setSuccess("Account created successfully. Redirecting to login...");
+      const loginData = await loginUser({
+        email: pendingRegisterData.email,
+        password: pendingRegisterData.password
+      });
+
+      localStorage.setItem("token", loginData.token);
+      saveAuthUserToStorage(loginData.user);
+
+      setIsOtpModalOpen(false);
+      setPendingRegisterData(null);
+      setSuccess("Dang ky thanh cong. Dang chuyen vao he thong...");
 
       setTimeout(() => {
-        navigate("/");
-      }, 1500);
+        navigate("/home");
+      }, 1000);
     } catch (err) {
-      setError(
-        err.response?.data?.message ||
-        err.response?.data?.error ||
-        "Register failed."
-      );
+      setOtpError(getApiErrorMessage(err, "OTP khong dung hoac da het han."));
+    } finally {
+      setIsVerifyingOtp(false);
     }
   };
 
   return (
     <div className="register-page">
       <div className="register-box">
+        <img src="/logo.png" alt="Chatbox" className="register-logo" />
         <h1 className="register-title">Sign up with email</h1>
         <p className="register-subtitle">
           Get chatting with friends and family today by signing up for our chat app!
@@ -129,15 +214,26 @@ function RegisterPage() {
           {error && <p className="form-error">{error}</p>}
           {success && <p className="form-success">{success}</p>}
 
-          <button type="submit" className="register-btn">
-            Create an account
+          <button type="submit" className="register-btn" disabled={isSubmitting}>
+            {isSubmitting ? "Đang gửi mã OTP..." : "Create an account"}
           </button>
         </form>
 
         <p className="switch-login">
-          Already have an account? <Link to="/">Login</Link>
+          Already have an account? <Link to="/login">Login</Link>
         </p>
       </div>
+
+      <OtpModal
+        isOpen={isOtpModalOpen}
+        email={pendingRegisterData?.email}
+        error={otpError}
+        isVerifying={isVerifyingOtp}
+        isResending={isResendingOtp}
+        onClose={handleCloseOtpModal}
+        onConfirm={handleConfirmOtp}
+        onResend={handleResendOtp}
+      />
     </div>
   );
 }

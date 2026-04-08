@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { loginUser } from "../services/authService";
 import { saveAuthUserToStorage } from "../utils/userNormalizer";
 import facebookIcon from "../assets/icons/facebook.png";
@@ -17,6 +17,7 @@ function LoginPage() {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e) => {
     setFormData((prev) => ({
@@ -38,6 +39,7 @@ function LoginPage() {
     }
 
     try {
+      setIsSubmitting(true);
       const data = await loginUser({ email, password });
 
       localStorage.setItem("token", data.token);
@@ -54,27 +56,30 @@ function LoginPage() {
           err.response?.data?.error ||
           "Login failed."
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div className="login-page">
       <div className="login-box">
+        <img src="/logo.png" alt="Chatbox" className="login-logo" />
         <h1 className="login-title">Login to Chatbox</h1>
         <p className="login-subtitle">
-          Welcome back! Sign in using your social account or email to continue us
+          Welcome back! Sign in using your social account or email to continue.
         </p>
 
         <div className="social-icons">
-          <button className="social-btn" type="button">
+          <button className="social-btn" type="button" aria-label="Facebook">
             <img src={facebookIcon} alt="Facebook" className="social-img" />
           </button>
 
-          <button className="social-btn" type="button">
+          <button className="social-btn" type="button" aria-label="Google">
             <img src={googleIcon} alt="Google" className="social-img" />
           </button>
 
-          <button className="social-btn" type="button">
+          <button className="social-btn" type="button" aria-label="Apple">
             <img src={appleIcon} alt="Apple" className="social-img" />
           </button>
         </div>
@@ -109,15 +114,24 @@ function LoginPage() {
           {error && <p className="form-error">{error}</p>}
           {success && <p className="form-success">{success}</p>}
 
-          <button type="submit" className="login-btn">
-            Log in
+          <button type="submit" className="login-btn" disabled={isSubmitting}>
+            {isSubmitting ? "Logging in..." : "Log in"}
           </button>
         </form>
 
-        <p className="forgot-password">Forgot password?</p>
+        <button
+          type="button"
+          className="forgot-password"
+          onClick={() => navigate("/login")}
+        >
+          Forgot password?
+        </button>
 
         <p className="switch-auth">
-          Don&apos;t have an account? <Link to="/register">Register</Link>
+          Don&apos;t have an account?{" "}
+          <button type="button" onClick={() => navigate("/register")}>
+            Register
+          </button>
         </p>
       </div>
     </div>

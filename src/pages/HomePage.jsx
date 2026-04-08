@@ -71,6 +71,21 @@ const getSafeId = (value) => {
   return String(value);
 };
 
+const parseOnlineValue = (value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return (
+      normalized === "true" ||
+      normalized === "1" ||
+      normalized === "t" ||
+      normalized === "online"
+    );
+  }
+  return false;
+};
+
 const HOME_CONVERSATIONS_CACHE_KEY = "homeConversationsCacheV1";
 const HOME_CONVERSATIONS_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -427,7 +442,7 @@ function HomePage() {
 
   useEffect(() => {
     if (!user?.id) return;
-    socket.emit("join_user", user.id);
+    socket.emit("user_online", user.id);
   }, [user?.id]);
 
   useEffect(() => {
@@ -565,6 +580,51 @@ function HomePage() {
   }, [selectedConversationId]);
 
   useEffect(() => {
+    const handleUserStatus = ({ userId, status }) => {
+      const targetUserId = getSafeId(userId);
+      if (!targetUserId) return;
+
+      const isOnline =
+        parseOnlineValue(status) ||
+        String(status || "").trim().toLowerCase() === "online";
+
+      setConversations((prev) =>
+        prev.map((conversation) => {
+          if (!Array.isArray(conversation?.members)) return conversation;
+
+          let changed = false;
+          const updatedMembers = conversation.members.map((member) => {
+            const memberId = getSafeId(getUserId(member));
+            if (!memberId || memberId !== targetUserId) {
+              return member;
+            }
+
+            changed = true;
+            return {
+              ...member,
+              is_online: isOnline,
+              isOnline,
+              online: isOnline
+            };
+          });
+
+          if (!changed) return conversation;
+          return {
+            ...conversation,
+            members: updatedMembers
+          };
+        })
+      );
+    };
+
+    socket.on("user_status", handleUserStatus);
+
+    return () => {
+      socket.off("user_status", handleUserStatus);
+    };
+  }, []);
+
+  useEffect(() => {
     setShowGroupInfoModal(false);
   }, [selectedConversationId]);
 
@@ -672,10 +732,12 @@ function HomePage() {
       ) || conversation.members?.[0];
 
     const isOnline =
-      otherMember?.is_online ??
-      otherMember?.isOnline ??
-      otherMember?.online ??
-      false;
+      parseOnlineValue(
+        otherMember?.is_online ??
+          otherMember?.isOnline ??
+          otherMember?.online ??
+          false
+      );
 
     return {
       text: isOnline ? "Online" : "Offline",

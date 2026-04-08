@@ -1,0 +1,33 @@
+.splash-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(110deg, #020a3d 0%, #50207b 52%, #4c2275 100%);
+}
+
+.splash-center {
+  text-align: center;
+  color: #f1f1f1;
+}
+
+.splash-logo {
+  width: 160px;
+  max-width: 42vw;
+  display: block;
+  margin: 0 auto 18px;
+}
+
+.splash-title {
+  margin: 0;
+  font-size: 54px;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+@media (max-width: 768px) {
+  .splash-title {
+    font-size: 42px;
+  }
+}

@@ -1,83 +1,115 @@
 .register-page {
   min-height: 100vh;
-  background-color: #f3f3f3;
+  background: linear-gradient(125deg, #1c1f6f 0%, #4a1b7a 52%, #0f5a95 100%);
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 24px;
+  padding: 28px 18px;
 }
 
 .register-box {
   width: 100%;
-  max-width: 720px;
+  max-width: 640px;
   text-align: center;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 16px;
+  box-shadow: 0 16px 44px rgba(10, 15, 40, 0.32);
+  padding: 34px 34px 30px;
+  backdrop-filter: blur(2px);
+}
+
+.register-logo {
+  width: 130px;
+  max-width: 45%;
+  margin: 0 auto 8px;
+  display: block;
 }
 
 .register-title {
-  font-size: 52px;
+  font-size: clamp(34px, 4vw, 48px);
   font-weight: 700;
-  margin: 0 0 18px;
-  color: #111;
+  margin: 0 0 10px;
+  color: #131934;
+  line-height: 1.12;
 }
 
 .register-subtitle {
-  font-size: 16px;
-  color: #7a7a7a;
-  margin: 0 0 42px;
+  font-size: 15px;
+  color: #5f6478;
+  margin: 0 0 28px;
 }
 
 .register-form {
   width: 100%;
-  max-width: 520px;
+  max-width: 540px;
   margin: 0 auto;
   text-align: left;
 }
 
 .input-group {
-  margin-bottom: 26px;
+  margin-bottom: 16px;
 }
 
 .input-group label {
   display: block;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  color: #2d7a74;
-  margin-bottom: 12px;
+  color: #2f3754;
+  margin-bottom: 8px;
 }
 
 .input-group input {
   width: 100%;
-  border: none;
-  border-bottom: 1.5px solid #cfcfcf;
-  background: transparent;
-  padding: 10px 0;
+  border: 1px solid #d8dce8;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px 14px;
   font-size: 16px;
   outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-group input:focus {
+  border-color: #5f56ff;
+  box-shadow: 0 0 0 3px rgba(95, 86, 255, 0.15);
 }
 
 .register-btn {
-  width: 250px;
-  height: 46px;
+  width: 100%;
+  height: 52px;
   display: block;
-  margin: 36px auto 16px;
+  margin: 22px auto 12px;
   border: none;
-  border-radius: 12px;
-  background-color: #0a9200;
+  border-radius: 14px;
+  background: linear-gradient(120deg, #5e35d5 0%, #1866cc 100%);
   color: white;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 600;
   cursor: pointer;
+  box-shadow: 0 10px 24px rgba(44, 59, 180, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.register-btn:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 14px 28px rgba(44, 59, 180, 0.42);
+  filter: brightness(1.04);
+}
+
+.register-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .switch-login {
-  margin-top: 8px;
+  margin-top: 10px;
   font-size: 15px;
-  color: #333;
+  color: #454a62;
   text-align: center;
 }
 
 .switch-login a {
-  color: #1a19ff;
+  color: #3a2ccf;
   text-decoration: none;
   font-weight: 600;
 }
@@ -88,19 +120,34 @@
   font-size: 14px;
   margin-top: 8px;
   margin-bottom: 8px;
-  text-align: center;
+  text-align: left;
 }
 
 .form-success {
-  color: #0a9200;
+  color: #0f8f45;
   font-size: 14px;
   margin-top: 8px;
   margin-bottom: 8px;
-  text-align: center;
+  text-align: left;
 }
 
 .password-hint {
   font-size: 13px;
-  color: #777;
+  color: #707792;
   margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+  .register-box {
+    padding: 26px 18px 22px;
+  }
+
+  .register-title {
+    font-size: 32px;
+  }
+
+  .register-btn {
+    font-size: 18px;
+    height: 50px;
+  }
 }
