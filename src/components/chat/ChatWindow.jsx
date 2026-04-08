@@ -6,6 +6,7 @@ function ChatWindow({
   selectedConversation,
   selectedOtherMember,
   selectedGroupMemberCount,
+  headerStatusText,
   headerAvatar,
   setShowGroupInfoModal,
   selectedConversationId,
@@ -44,7 +45,7 @@ function ChatWindow({
             <span>
               {selectedConversation?.isGroup
                 ? `${selectedGroupMemberCount} members`
-                : "Active"}
+                : headerStatusText || "Offline"}
             </span>
           </div>
         </div>

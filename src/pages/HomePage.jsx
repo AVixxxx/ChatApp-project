@@ -93,19 +93,36 @@ function HomePage() {
   };
 
   const getConversationPreview = (conversation) => {
-    if (!conversation?.lastMessage) {
+    const lastMessage = conversation?.lastMessage || conversation?.last_message;
+
+    if (!lastMessage) {
       return conversation?.isGroup ? "Group created" : "Start chatting...";
     }
 
-    if (conversation.lastMessage.messageType === "image") {
+    const messageType =
+      lastMessage.messageType || lastMessage.message_type || lastMessage.type;
+
+    if (messageType === "image") {
       return "Image";
     }
 
-    if (conversation.lastMessage.messageType === "file") {
+    if (messageType === "file") {
       return "File";
     }
 
-    return conversation.lastMessage.text || "New message";
+    const textPreview =
+      lastMessage.text ||
+      lastMessage.content ||
+      lastMessage.message ||
+      conversation?.lastMessageText ||
+      conversation?.last_message ||
+      conversation?.last_message_text;
+
+    if (typeof textPreview === "string" && textPreview.trim()) {
+      return textPreview;
+    }
+
+    return "New message";
   };
 
   const getConversationDisplayName = (conversation) => {
@@ -478,6 +495,23 @@ function HomePage() {
   const getGroupPickerMemberAvatar = (member) =>
     getAvatarUrl(member, GROUP_PICKER_MEMBER_AVATAR_URL);
 
+  const getDirectChatStatusText = (conversation) => {
+    if (!conversation || conversation.isGroup) return "";
+
+    const otherMember =
+      conversation.members?.find(
+        (member) => getUserId(member) && getUserId(member) !== user?.id
+      ) || conversation.members?.[0];
+
+    const isOnline =
+      otherMember?.is_online ??
+      otherMember?.isOnline ??
+      otherMember?.online ??
+      false;
+
+    return isOnline ? "Online" : "Offline";
+  };
+
   return (
     <div className="chat-layout">
       <Sidebar
@@ -506,6 +540,7 @@ function HomePage() {
         selectedConversation={selectedConversation}
         selectedOtherMember={selectedOtherMember}
         selectedGroupMemberCount={selectedGroupMemberCount}
+        headerStatusText={getDirectChatStatusText(selectedConversation)}
         headerAvatar={headerAvatar}
         setShowGroupInfoModal={setShowGroupInfoModal}
         selectedConversationId={selectedConversationId}
