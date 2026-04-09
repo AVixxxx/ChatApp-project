@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaComments, FaPhoneAlt, FaAddressBook, FaCloudUploadAlt, FaBriefcase, FaCog } from "react-icons/fa";
-import SettingsMenu from "../SettingsMenu";
+import SettingsMenu from "./SettingsMenu";
 
 function Sidebar({
   avatarUrl,

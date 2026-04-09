@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { loginUser } from "../services/authService";
-import { saveAuthUserToStorage } from "../utils/userNormalizer";
-import facebookIcon from "../assets/icons/facebook.png";
-import googleIcon from "../assets/icons/google.png";
-import appleIcon from "../assets/icons/apple.png";
+import { loginUser } from "@/features/auth/services/authService";
+import { saveAuthUserToStorage } from "@/utils/userNormalizer";
+import facebookIcon from "@/assets/icons/facebook.png";
+import googleIcon from "@/assets/icons/google.png";
+import appleIcon from "@/assets/icons/apple.png";
 import "./LoginPage.css";
 
 function LoginPage() {
@@ -122,7 +122,11 @@ function LoginPage() {
         <button
           type="button"
           className="forgot-password"
-          onClick={() => navigate("/login")}
+          onClick={() =>
+            navigate("/forgot-password", {
+              state: { email: formData.email }
+            })
+          }
         >
           Forgot password?
         </button>

@@ -1,4 +1,4 @@
-import { getAvatarUrl } from "../../utils/userNormalizer";
+import { getAvatarUrl } from "@/utils/userNormalizer";
 
 function FriendRequestList({ requests, onAccept, onDecline }) {
   if (!requests.length) {

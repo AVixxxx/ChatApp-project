@@ -1,29 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Sidebar from "../components/chat/Sidebar";
-import ContactsSidebar from "../components/contacts/ContactsSidebar";
-import ContactsHeader from "../components/contacts/ContactsHeader";
-import ContactList from "../components/contacts/ContactList";
-import FriendRequestList from "../components/contacts/FriendRequestList";
-import FriendProfileModal from "../components/contacts/FriendProfileModal";
-import { createPrivateConversation } from "../services/conversationService";
+import Sidebar from "@/features/chat/components/Sidebar";
+import ContactsSidebar from "@/features/contacts/components/ContactsSidebar";
+import ContactsHeader from "@/features/contacts/components/ContactsHeader";
+import ContactList from "@/features/contacts/components/ContactList";
+import FriendRequestList from "@/features/contacts/components/FriendRequestList";
+import FriendProfileModal from "@/features/contacts/components/FriendProfileModal";
+import { createPrivateConversation } from "@/features/chat/services/conversationService";
 import {
   acceptFriendRequest,
   declineFriendRequest,
   getFriendList,
   getFriendRequests,
   removeFriend
-} from "../services/friendService";
-import { getMe } from "../services/userService";
+} from "@/features/contacts/services/friendService";
+import { getMe } from "@/features/profile/services/userService";
 import {
   getAvatarUrl,
   getStoredAuthUser,
   normalizeUserEntity,
   saveAuthUserToStorage
-} from "../utils/userNormalizer";
-import { prefetchHomeConversationsCache } from "../utils/homeConversationCache";
-import socket from "../socket";
-import "./HomePage.css";
+} from "@/utils/userNormalizer";
+import { prefetchHomeConversationsCache } from "@/utils/homeConversationCache";
+import socket from "@/socket";
+import "@/features/chat/pages/HomePage.css";
 import "./ContactsPage.css";
 
 const CONTACTS_CACHE_KEY = "contactsPageCacheV1";

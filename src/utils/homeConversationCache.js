@@ -1,5 +1,5 @@
-import { getConversations } from "../services/conversationService";
-import { getFriends } from "../services/userService";
+import { getConversations } from "@/features/chat/services/conversationService";
+import { getFriends } from "@/features/profile/services/userService";
 import { getStoredAuthUser, normalizeUserEntity } from "./userNormalizer";
 
 const HOME_CONVERSATIONS_CACHE_KEY = "homeConversationsCacheV1";

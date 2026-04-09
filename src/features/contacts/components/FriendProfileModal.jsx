@@ -1,5 +1,5 @@
 import { FaTimes, FaUserCircle, FaPhoneAlt, FaEnvelope } from "react-icons/fa";
-import { getAvatarUrl } from "../../utils/userNormalizer";
+import { getAvatarUrl } from "@/utils/userNormalizer";
 import "./FriendProfileModal.css";
 
 function FriendProfileModal({ isOpen, contact, onClose }) {

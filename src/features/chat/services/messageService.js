@@ -1,8 +1,8 @@
 import axios from "axios";
-import { normalizeUserEntity } from "../utils/userNormalizer";
+import { API_URL } from "@/config/api";
+import { normalizeUserEntity } from "@/utils/userNormalizer";
 
-const BASE_URL = "https://be-chatbox-1.onrender.com";
-const API_URL = `${BASE_URL}/api/messages`;
+const MESSAGE_API_URL = `${API_URL}/api/messages`;
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");
@@ -29,7 +29,7 @@ const normalizeMessage = (message) => {
 };
 
 export const getMessagesByConversation = async (conversationId) => {
-  const response = await axios.get(`${API_URL}/${conversationId}`, {
+  const response = await axios.get(`${MESSAGE_API_URL}/${conversationId}`, {
     headers: {
       ...getAuthHeaders()
     }
@@ -41,7 +41,7 @@ export const getMessagesByConversation = async (conversationId) => {
 };
 
 export const sendMessage = async (messageData) => {
-  const response = await axios.post(`${API_URL}/send`, messageData, {
+  const response = await axios.post(`${MESSAGE_API_URL}/send`, messageData, {
     headers: {
       ...getAuthHeaders()
     }

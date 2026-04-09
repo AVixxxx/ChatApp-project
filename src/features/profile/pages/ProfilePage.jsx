@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { FaComments, FaCog, FaSave, FaArrowLeft, FaCamera } from "react-icons/fa";
-import { getMe, updateMe } from "../services/userService";
+import { getMe, updateMe } from "@/features/profile/services/userService";
 import {
   getAvatarUrl,
   getStoredAuthUser,
   normalizeUserEntity,
   saveAuthUserToStorage
-} from "../utils/userNormalizer";
-import { prefetchHomeConversationsCache } from "../utils/homeConversationCache";
+} from "@/utils/userNormalizer";
+import { prefetchHomeConversationsCache } from "@/utils/homeConversationCache";
 import "./ProfilePage.css";
 
 const toFormState = (user) => ({

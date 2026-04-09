@@ -1,9 +1,9 @@
 import axios from "axios";
-import { DEFAULT_AVATAR_URL } from "../constants/avatar";
-import { getAvatarUrl, normalizeUserEntity } from "../utils/userNormalizer";
+import { API_URL } from "@/config/api";
+import { DEFAULT_AVATAR_URL } from "@/constants/avatar";
+import { getAvatarUrl, normalizeUserEntity } from "@/utils/userNormalizer";
 
-const BASE_URL = "https://be-chatbox-1.onrender.com";
-const FRIENDS_API_URL = `${BASE_URL}/api/friends`;
+const FRIENDS_API_URL = `${API_URL}/api/friends`;
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");

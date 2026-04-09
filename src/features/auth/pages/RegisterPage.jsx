@@ -4,9 +4,9 @@ import {
   loginUser,
   requestRegistrationOtp,
   verifyRegisterWithOtp
-} from "../services/authService";
-import { saveAuthUserToStorage } from "../utils/userNormalizer";
-import OtpModal from "../components/auth/OtpModal";
+} from "@/features/auth/services/authService";
+import { saveAuthUserToStorage } from "@/utils/userNormalizer";
+import OtpModal from "@/features/auth/components/OtpModal";
 import "./RegisterPage.css";
 
 const getApiErrorMessage = (err, fallbackMessage) => {

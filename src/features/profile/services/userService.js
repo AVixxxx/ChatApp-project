@@ -1,9 +1,9 @@
 import axios from "axios";
-import { normalizeUserEntity } from "../utils/userNormalizer";
+import { API_URL } from "@/config/api";
+import { normalizeUserEntity } from "@/utils/userNormalizer";
 
-const BASE_URL = "https://be-chatbox-1.onrender.com";
-const AUTH_API_URL = `${BASE_URL}/api/auth`;
-const FRIENDS_API_URL = `${BASE_URL}/api/friends`;
+const AUTH_API_URL = `${API_URL}/api/auth`;
+const FRIENDS_API_URL = `${API_URL}/api/friends`;
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 
 const getAuthHeaders = () => {

@@ -1,4 +1,4 @@
-import { getAvatarUrl } from "../../utils/userNormalizer";
+import { getAvatarUrl } from "@/utils/userNormalizer";
 import ContactActions from "./ContactActions";
 
 function ContactItem({ contact, onMessage, onViewProfile, onRemove }) {

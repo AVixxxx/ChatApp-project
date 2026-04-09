@@ -1,39 +1,39 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./HomePage.css";
-import socket from "../socket";
+import socket from "@/socket";
 import {
   getConversations,
   createGroupConversation,
   createPrivateConversation
-} from "../services/conversationService";
+} from "@/features/chat/services/conversationService";
 import {
   getMessagesByConversation,
   sendMessage
-} from "../services/messageService";
-import { findAccount } from "../services/authService";
-import { sendFriendRequest } from "../services/friendService";
-import { getMe, getFriends } from "../services/userService";
+} from "@/features/chat/services/messageService";
+import { findAccount } from "@/features/auth/services/authService";
+import { sendFriendRequest } from "@/features/contacts/services/friendService";
+import { getMe, getFriends } from "@/features/profile/services/userService";
 import {
   getAvatarUrl,
   getStoredAuthUser,
   normalizeUserEntity,
   saveAuthUserToStorage
-} from "../utils/userNormalizer";
+} from "@/utils/userNormalizer";
 import {
   GROUP_AVATAR_URL,
   GROUP_INFO_MEMBER_AVATAR_URL,
   GROUP_PICKER_MEMBER_AVATAR_URL,
   MESSAGE_SENDER_AVATAR_URL
-} from "../constants/avatar";
-import Sidebar from "../components/chat/Sidebar";
-import ConversationList from "../components/chat/ConversationList";
-import ChatWindow from "../components/chat/ChatWindow";
-import RightPanel from "../components/chat/RightPanel";
-import GroupModal from "../components/chat/GroupModal";
-import GroupInfoModal from "../components/chat/GroupInfoModal";
-import AddFriendModal from "../components/chat/AddFriendModal";
-import FriendProfileModal from "../components/contacts/FriendProfileModal";
+} from "@/constants/avatar";
+import Sidebar from "@/features/chat/components/Sidebar";
+import ConversationList from "@/features/chat/components/ConversationList";
+import ChatWindow from "@/features/chat/components/ChatWindow";
+import RightPanel from "@/features/chat/components/RightPanel";
+import GroupModal from "@/features/chat/components/GroupModal";
+import GroupInfoModal from "@/features/chat/components/GroupInfoModal";
+import AddFriendModal from "@/features/chat/components/AddFriendModal";
+import FriendProfileModal from "@/features/contacts/components/FriendProfileModal";
 
 const getEntityId = (entity) => {
   if (!entity || typeof entity !== "object") return null;
