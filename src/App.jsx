@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import SplashPage from "./pages/SplashPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import LoginPage from "./pages/LoginPage";
@@ -42,6 +42,12 @@ function App() {
           </ProtectedRoute>
         }
       />
+
+      <Route
+        path="/friend-profile"
+        element={<Navigate to="/contacts" replace />}
+      />
+
     </Routes>
   );
 }

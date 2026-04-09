@@ -205,6 +205,18 @@
   object-fit: cover;
 }
 
+.contact-avatar-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.contact-avatar-btn:hover {
+  transform: translateY(-1px);
+}
+
 .contact-name {
   margin: 0;
   font-weight: 700;

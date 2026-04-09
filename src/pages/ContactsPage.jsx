@@ -5,6 +5,7 @@ import ContactsSidebar from "../components/contacts/ContactsSidebar";
 import ContactsHeader from "../components/contacts/ContactsHeader";
 import ContactList from "../components/contacts/ContactList";
 import FriendRequestList from "../components/contacts/FriendRequestList";
+import FriendProfileModal from "../components/contacts/FriendProfileModal";
 import { createPrivateConversation } from "../services/conversationService";
 import {
   acceptFriendRequest,
@@ -79,6 +80,8 @@ function ContactsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortType, setSortType] = useState("asc");
   const [filterType, setFilterType] = useState("all");
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
   const [isContactsLoading, setIsContactsLoading] = useState(
     () => !(cachedContactsState?.contacts?.length > 0)
   );
@@ -292,8 +295,14 @@ function ContactsPage() {
     }
   };
 
-  const handleViewProfile = () => {
-    navigate("/profile");
+  const handleViewProfile = (contact) => {
+    setSelectedContact(contact || null);
+    setShowFriendProfileModal(true);
+  };
+
+  const handleCloseFriendProfileModal = () => {
+    setShowFriendProfileModal(false);
+    setSelectedContact(null);
   };
 
   const renderMainContent = () => {
@@ -359,6 +368,12 @@ function ContactsPage() {
 
         {renderMainContent()}
       </div>
+
+      <FriendProfileModal
+        isOpen={showFriendProfileModal}
+        contact={selectedContact}
+        onClose={handleCloseFriendProfileModal}
+      />
     </div>
   );
 }

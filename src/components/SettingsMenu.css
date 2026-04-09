@@ -1,0 +1,48 @@
+.settings-menu-anchor {
+  position: relative;
+}
+
+.settings-menu-popup {
+  position: absolute;
+  left: calc(100% + 12px);
+  bottom: -8px;
+  width: 220px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.16);
+  padding: 8px;
+  z-index: 40;
+}
+
+.settings-menu-item {
+  width: 100%;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #1f2937;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-menu-item:hover {
+  background: #f3f4f6;
+}
+
+.settings-menu-icon {
+  font-size: 15px;
+}
+
+.settings-menu-divider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 6px 2px;
+}
+
+.settings-menu-item-logout {
+  color: #dc2626;
+}

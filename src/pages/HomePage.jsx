@@ -33,6 +33,7 @@ import RightPanel from "../components/chat/RightPanel";
 import GroupModal from "../components/chat/GroupModal";
 import GroupInfoModal from "../components/chat/GroupInfoModal";
 import AddFriendModal from "../components/chat/AddFriendModal";
+import FriendProfileModal from "../components/contacts/FriendProfileModal";
 
 const getEntityId = (entity) => {
   if (!entity || typeof entity !== "object") return null;
@@ -185,6 +186,8 @@ function HomePage() {
   const [groupName, setGroupName] = useState("");
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
+  const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
+  const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
   const messagesEndRef = useRef(null);
 
   const formatTime = (dateString) => {
@@ -894,6 +897,29 @@ function HomePage() {
 
   const selectedStatusInfo = getDirectChatStatusInfo(selectedConversation);
 
+  const handleOpenFriendProfileFromConversation = (conversation) => {
+    if (!conversation || conversation.isGroup) return;
+
+    const otherMember =
+      conversation.members?.find(
+        (member) => getUserId(member) && getUserId(member) !== user?.id
+      ) || conversation.members?.[0];
+
+    if (!otherMember) return;
+
+    const normalizedMember = normalizeUserEntity(otherMember);
+    const isOnline = parseOnlineValue(
+      otherMember?.is_online ?? otherMember?.isOnline ?? otherMember?.online ?? false
+    );
+
+    setSelectedFriendProfile({
+      ...normalizedMember,
+      raw: otherMember,
+      isOnline
+    });
+    setShowFriendProfileModal(true);
+  };
+
   return (
     <div className="chat-layout">
       <Sidebar
@@ -921,6 +947,7 @@ function HomePage() {
         }
         formatConversationTime={formatConversationTime}
         getConversationPreview={getConversationPreview}
+        onAvatarClick={handleOpenFriendProfileFromConversation}
       />
 
       <ChatWindow
@@ -979,6 +1006,15 @@ function HomePage() {
         onClose={closeAddFriendModal}
         onSearch={handleSearchAddFriend}
         onAddFriend={handleAddFriendFromSearch}
+      />
+
+      <FriendProfileModal
+        isOpen={showFriendProfileModal}
+        contact={selectedFriendProfile}
+        onClose={() => {
+          setShowFriendProfileModal(false);
+          setSelectedFriendProfile(null);
+        }}
       />
     </div>
   );

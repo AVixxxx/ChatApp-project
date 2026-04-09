@@ -13,7 +13,8 @@ function ConversationList({
   getConversationDisplayName,
   getConversationStatusText,
   formatConversationTime,
-  getConversationPreview
+  getConversationPreview,
+  onAvatarClick
 }) {
   return (
     <div className="conversation-list">
@@ -59,7 +60,17 @@ function ConversationList({
             }`}
             onClick={() => onSelectConversation(conversation.id)}
           >
-            <img src={getConversationAvatar(conversation)} alt="conversation" />
+            <button
+              type="button"
+              className="conversation-avatar-btn"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAvatarClick?.(conversation);
+              }}
+              aria-label={`View profile of ${getConversationDisplayName(conversation)}`}
+            >
+              <img src={getConversationAvatar(conversation)} alt="conversation" />
+            </button>
             <div className="conversation-content">
               <div className="conversation-top">
                 <h4>{getConversationDisplayName(conversation)}</h4>

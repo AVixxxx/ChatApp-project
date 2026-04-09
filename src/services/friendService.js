@@ -96,6 +96,19 @@ export const normalizeFriend = (friendRequest, currentUserId) => {
     status,
     type,
     name: normalizedFriend?.name || fallbackName || `User ${safeFriendId.slice(0, 5)}`,
+    email: normalizedFriend?.email || friendRequest?.email || "",
+    phone:
+      normalizedFriend?.phone ||
+      normalizedFriend?.phone_number ||
+      friendRequest?.phone ||
+      friendRequest?.phone_number ||
+      "",
+    phone_number:
+      normalizedFriend?.phone_number ||
+      normalizedFriend?.phone ||
+      friendRequest?.phone_number ||
+      friendRequest?.phone ||
+      "",
     avatar: getAvatarUrl(normalizedFriend, DEFAULT_AVATAR_URL),
     isOnline,
     raw: friendRequest
