@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API_URL } from "@/config/api";
@@ -16,7 +16,7 @@ const STEP_TITLES = {
 const STEP_DESCRIPTIONS = {
   1: "We will send a one-time password to your email.",
   2: "Enter the 6-digit OTP that you received.",
-  3: "Create a new password for your account."
+  3: "Create a new password for your account. OTP will be verified on submit."
 };
 
 const getApiErrorMessage = (error, fallbackMessage) => {
@@ -75,6 +75,7 @@ function ForgotPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const otpInputRefs = useRef([]);
 
   useEffect(() => {
     if (emailFromRoute && !email) {
@@ -125,6 +126,7 @@ function ForgotPasswordPage() {
         "Cannot send OTP right now."
       );
 
+      setOtp("");
       setStep(2);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, "Cannot send OTP right now."));
@@ -133,7 +135,7 @@ function ForgotPasswordPage() {
     }
   };
 
-  const verifyOtp = async () => {
+  const verifyOtp = () => {
     const normalizedOtp = otp.replace(/\D/g, "");
 
     if (normalizedOtp.length !== 6) {
@@ -141,34 +143,9 @@ function ForgotPasswordPage() {
       return;
     }
 
-    try {
-      setLoading(true);
-      setError("");
-
-      await postWithFallback(
-        [
-          `${API_BASE}/verify-reset-otp`,
-          `${API_BASE}/verify-forgot-password`,
-          `${API_BASE}/forgot-password/verify`,
-          `${API_BASE}/forgot-password`
-        ],
-        {
-          email: email.trim(),
-          otp: normalizedOtp,
-          verify: true,
-          action: "verify"
-        },
-        "OTP verification is not available right now."
-      );
-
-      setStep(3);
-    } catch (verifyError) {
-      setError(
-        getApiErrorMessage(verifyError, "OTP is invalid or expired. Please try again.")
-      );
-    } finally {
-      setLoading(false);
-    }
+    setError("");
+    setOtp(normalizedOtp);
+    setStep(3);
   };
 
   const resendOtp = async () => {
@@ -228,6 +205,58 @@ function ForgotPasswordPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const setOtpDigitAt = (index, value) => {
+    const nextDigits = Array.from({ length: 6 }, (_, digitIndex) => otp[digitIndex] || "");
+    nextDigits[index] = value;
+    setOtp(nextDigits.join(""));
+  };
+
+  const handleOtpChange = (index, rawValue) => {
+    const numericValue = String(rawValue || "").replace(/\D/g, "");
+
+    if (!numericValue) {
+      setOtpDigitAt(index, "");
+      return;
+    }
+
+    const digit = numericValue[numericValue.length - 1];
+    setOtpDigitAt(index, digit);
+
+    if (index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index, event) => {
+    if (event.key === "Backspace" && !otp[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+
+    if (event.key === "ArrowLeft" && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+
+    if (event.key === "ArrowRight" && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (event) => {
+    event.preventDefault();
+    const pasted = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!pasted) return;
+
+    const nextDigits = Array.from({ length: 6 }, () => "");
+    pasted.split("").forEach((digit, index) => {
+      nextDigits[index] = digit;
+    });
+
+    setOtp(nextDigits.join(""));
+
+    const focusIndex = Math.min(pasted.length, 6) - 1;
+    otpInputRefs.current[Math.max(focusIndex, 0)]?.focus();
   };
 
   return (
@@ -332,6 +361,28 @@ function ForgotPasswordPage() {
             padding: 10px 12px;
           }
 
+          .forgot-otp-inputs {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 4px;
+          }
+
+          .forgot-otp-input {
+            width: 46px;
+            height: 50px;
+            text-align: center;
+            font-size: 24px;
+            border: 1px solid #d0d0d0;
+            border-radius: 10px;
+            outline: none;
+          }
+
+          .forgot-otp-input:focus {
+            border-color: #5f56ff;
+            box-shadow: 0 0 0 2px rgba(95, 86, 255, 0.15);
+          }
+
           .forgot-primary-btn,
           .forgot-secondary-btn,
           .forgot-text-btn {
@@ -409,6 +460,12 @@ function ForgotPasswordPage() {
             .forgot-title {
               font-size: 25px;
             }
+
+            .forgot-otp-input {
+              width: 40px;
+              height: 46px;
+              font-size: 20px;
+            }
           }
         `}
       </style>
@@ -455,16 +512,25 @@ function ForgotPasswordPage() {
           {step === 2 && (
             <>
               <div className="forgot-group">
-                <label htmlFor="forgot-otp">OTP (6 digits)</label>
-                <input
-                  id="forgot-otp"
-                  type="text"
-                  value={otp}
-                  onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="Enter OTP"
-                  inputMode="numeric"
-                  maxLength={6}
-                />
+                <label>OTP (6 digits)</label>
+                <div className="forgot-otp-inputs" onPaste={handleOtpPaste}>
+                  {Array.from({ length: 6 }, (_, index) => (
+                    <input
+                      key={index}
+                      ref={(element) => {
+                        otpInputRefs.current[index] = element;
+                      }}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={1}
+                      className="forgot-otp-input"
+                      value={otp[index] || ""}
+                      onChange={(event) => handleOtpChange(index, event.target.value)}
+                      onKeyDown={(event) => handleOtpKeyDown(index, event)}
+                    />
+                  ))}
+                </div>
               </div>
 
               {error && <p className="forgot-error">{error}</p>}

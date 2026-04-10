@@ -68,6 +68,16 @@ const writeContactsCache = ({ contacts, requests, activeTab }) => {
   }
 };
 
+const parsePresenceStatus = (statusValue) => {
+  if (typeof statusValue === "boolean") return statusValue;
+  if (typeof statusValue === "number") return statusValue === 1;
+  if (typeof statusValue === "string") {
+    const normalized = statusValue.trim().toLowerCase();
+    return normalized === "online" || normalized === "true" || normalized === "1";
+  }
+  return false;
+};
+
 function ContactsPage() {
   const cachedContactsState = readContactsCache();
   const navigate = useNavigate();
@@ -191,6 +201,36 @@ function ContactsPage() {
       socket.off("notification", handleNotification);
     };
   }, [user?.id]);
+
+  useEffect(() => {
+    const handleUserStatus = ({ userId, status }) => {
+      const targetId = String(userId || "");
+      if (!targetId) return;
+
+      const isOnline = parsePresenceStatus(status);
+
+      setContacts((prev) =>
+        prev.map((contact) => {
+          if (String(contact?.id || "") !== targetId) {
+            return contact;
+          }
+
+          return {
+            ...contact,
+            isOnline,
+            is_online: isOnline,
+            online: isOnline
+          };
+        })
+      );
+    };
+
+    socket.on("user_status", handleUserStatus);
+
+    return () => {
+      socket.off("user_status", handleUserStatus);
+    };
+  }, []);
 
   useEffect(() => {
     writeContactsCache({ contacts, requests, activeTab });

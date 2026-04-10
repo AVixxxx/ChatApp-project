@@ -86,7 +86,7 @@ function RegisterPage() {
       password,
       phone: "",
       avatar: "",
-      is_online: true,
+      is_online: false,
       create_at: new Date().toISOString()
     };
 
