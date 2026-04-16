@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import "./HomePage.css";
 import socket, { connectSocketWithToken } from "@/socket";
@@ -8,8 +8,11 @@ import {
   createPrivateConversation
 } from "@/features/chat/services/conversationService";
 import {
-  getMessagesByConversation,
-  sendMessage
+  getMessagesPage,
+  sendMessage,
+  sendImageMessage,
+  sendFileMessage,
+  normalizeMessage
 } from "@/features/chat/services/messageService";
 import { findAccount } from "@/features/auth/services/authService";
 import { sendFriendRequest } from "@/features/contacts/services/friendService";
@@ -92,6 +95,7 @@ const parseOnlineValue = (value) => {
 
 const HOME_CONVERSATIONS_CACHE_KEY = "homeConversationsCacheV1";
 const HOME_CONVERSATIONS_CACHE_TTL_MS = 5 * 60 * 1000;
+const MESSAGE_PAGE_SIZE = 30;
 
 const readHomeConversationsCache = () => {
   try {
@@ -198,6 +202,14 @@ function HomePage() {
   const [currentConversation, setCurrentConversation] = useState(null);
   const [unreadCountByConversationId, setUnreadCountByConversationId] = useState({});
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const shouldScrollToBottomRef = useRef(false);
+  const pendingPrependScrollRef = useRef(null);
+  const isLoadingOlderMessagesRef = useRef(false);
+  const [messagePageCursor, setMessagePageCursor] = useState(null);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [isInitialMessagesLoading, setIsInitialMessagesLoading] = useState(false);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
 
   const getConversationSortTime = (conversation) => {
     const rawValue =
@@ -460,6 +472,34 @@ function HomePage() {
     });
   };
 
+  const resolveConversationTarget = async () => {
+    let targetConversationId = selectedConversationId;
+
+    if (!isVirtualConversationId(targetConversationId)) {
+      return targetConversationId;
+    }
+
+    const selectedVirtualConversation = conversations.find(
+      (conversation) => conversation.id === selectedConversationId
+    );
+    const friendId = selectedVirtualConversation?.friendId;
+
+    if (!friendId) {
+      console.error("Missing friend id for virtual conversation");
+      return null;
+    }
+
+    const createdConversation = await createPrivateConversation([friendId]);
+
+    setConversations((prev) => {
+      const filtered = prev.filter((conversation) => conversation.id !== selectedConversationId);
+      return [createdConversation, ...filtered];
+    });
+
+    setSelectedConversationId(createdConversation.id);
+    return createdConversation.id;
+  };
+
   const appendMessageWithoutDuplicate = (message) => {
     const normalizedCreatedAt =
       message?.createdAt || message?.created_at || message?.create_at;
@@ -499,6 +539,104 @@ function HomePage() {
           toTimestamp(firstMessage) - toTimestamp(secondMessage)
       );
     });
+  };
+
+  const isNearBottom = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return true;
+
+    return (
+      container.scrollHeight - container.scrollTop - container.clientHeight < 140
+    );
+  };
+
+  const loadInitialMessages = async (conversationId) => {
+    if (!conversationId || isVirtualConversationId(conversationId)) {
+      setMessages([]);
+      setMessagePageCursor(null);
+      setHasMoreMessages(false);
+      isLoadingOlderMessagesRef.current = false;
+      return;
+    }
+
+    setIsInitialMessagesLoading(true);
+
+    try {
+      const page = await getMessagesPage(conversationId, { limit: MESSAGE_PAGE_SIZE });
+      shouldScrollToBottomRef.current = true;
+      setMessages(page.messages);
+      setMessagePageCursor(page.nextCursor || null);
+      setHasMoreMessages(Boolean(page.nextCursor));
+    } catch (error) {
+      console.error("Failed to load messages:", error);
+      setMessages([]);
+      setMessagePageCursor(null);
+      setHasMoreMessages(false);
+    } finally {
+      setIsInitialMessagesLoading(false);
+    }
+  };
+
+  const loadOlderMessages = async () => {
+    if (
+      !selectedConversationId ||
+      isVirtualConversationId(selectedConversationId) ||
+      !hasMoreMessages ||
+      isLoadingOlderMessagesRef.current ||
+      !messagePageCursor
+    ) {
+      return;
+    }
+
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    pendingPrependScrollRef.current = {
+      scrollHeight: container.scrollHeight,
+      scrollTop: container.scrollTop
+    };
+
+    isLoadingOlderMessagesRef.current = true;
+    setIsLoadingOlderMessages(true);
+    shouldScrollToBottomRef.current = false;
+
+    try {
+      const previousCursor = messagePageCursor;
+      const page = await getMessagesPage(selectedConversationId, {
+        cursor: messagePageCursor,
+        limit: MESSAGE_PAGE_SIZE
+      });
+
+      setMessages((prev) => {
+        const existingIds = new Set(prev.map((message) => message.id));
+        const olderMessages = page.messages.filter((message) => !existingIds.has(message.id));
+        return [...olderMessages, ...prev].sort(
+          (firstMessage, secondMessage) =>
+            new Date(firstMessage.createdAt || firstMessage.created_at || firstMessage.create_at || 0) -
+            new Date(secondMessage.createdAt || secondMessage.created_at || secondMessage.create_at || 0)
+        );
+      });
+
+      setMessagePageCursor(page.nextCursor || null);
+
+      const hasOlderBatch = Array.isArray(page.messages) && page.messages.length > 0;
+      const cursorMoved = page.nextCursor && page.nextCursor !== previousCursor;
+      setHasMoreMessages(Boolean(page.nextCursor) && hasOlderBatch && cursorMoved);
+    } catch (error) {
+      console.error("Failed to load older messages:", error);
+    } finally {
+      isLoadingOlderMessagesRef.current = false;
+      setIsLoadingOlderMessages(false);
+    }
+  };
+
+  const handleMessageScroll = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    if (container.scrollTop <= 40) {
+      loadOlderMessages();
+    }
   };
 
   const handleSelectConversation = async (conversationId) => {
@@ -603,10 +741,6 @@ function HomePage() {
       setIsCreatingGroup(false);
     }
   };
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   useEffect(() => {
     connectSocketWithToken();
@@ -718,43 +852,40 @@ function HomePage() {
   }, [conversations, selectedConversationId]);
 
   useEffect(() => {
-    const fetchMessages = async () => {
-      if (!selectedConversationId) {
-        setMessages([]);
-        return;
-      }
-
-      if (isVirtualConversationId(selectedConversationId)) {
-        setMessages([]);
-        return;
-      }
-
-      try {
-        const data = await getMessagesByConversation(selectedConversationId);
-        setMessages(data);
-      } catch (error) {
-        console.error("Failed to load messages:", error);
-      }
-    };
-
-    fetchMessages();
+    setMessages([]);
+    setMessagePageCursor(null);
+    setHasMoreMessages(true);
+    setIsLoadingOlderMessages(false);
+    isLoadingOlderMessagesRef.current = false;
+    loadInitialMessages(selectedConversationId);
   }, [selectedConversationId]);
+
+  useLayoutEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    if (pendingPrependScrollRef.current) {
+      const { scrollHeight, scrollTop } = pendingPrependScrollRef.current;
+      const nextScrollHeight = container.scrollHeight;
+      container.scrollTop = scrollTop + (nextScrollHeight - scrollHeight);
+      pendingPrependScrollRef.current = null;
+      return;
+    }
+
+    if (shouldScrollToBottomRef.current) {
+      container.scrollTop = container.scrollHeight;
+      shouldScrollToBottomRef.current = false;
+    }
+  }, [messages]);
 
   useEffect(() => {
     const handleReceiveMessage = (message) => {
-      const normalizedMessage = {
+      const normalizedMessage = normalizeMessage({
         ...message,
-        id: getEntityId(message),
-        text:
-          message.text ||
-          message.content ||
-          message.message ||
-          message.last_message ||
-          "",
-        createdAt: message.createdAt || message.created_at || message.create_at,
-        conversationId:
-          message.conversationId || message.conversation_id || message.conversation
-      };
+        id: getEntityId(message)
+      });
+
+      const isActiveConversationScrollTarget = isNearBottom();
 
       updateConversationWithNewMessage(normalizedMessage);
 
@@ -786,6 +917,7 @@ function HomePage() {
         activeFriendId === messageSenderId;
 
       if (isActiveConversationMatch || isActiveVirtualDirectMatch) {
+        shouldScrollToBottomRef.current = isActiveConversationScrollTarget;
         appendMessageWithoutDuplicate(normalizedMessage);
         return;
       }
@@ -804,12 +936,22 @@ function HomePage() {
       }
     };
 
+    const handleReceiveMessageBatch = (messagesBatch) => {
+      if (!Array.isArray(messagesBatch) || messagesBatch.length === 0) return;
+
+      messagesBatch.forEach((message) => {
+        handleReceiveMessage(message);
+      });
+    };
+
     socketClient.on("receive_message", handleReceiveMessage);
     socketClient.on("new_message", handleReceiveMessage);
+    socketClient.on("new_messages_batch", handleReceiveMessageBatch);
 
     return () => {
       socketClient.off("receive_message", handleReceiveMessage);
       socketClient.off("new_message", handleReceiveMessage);
+      socketClient.off("new_messages_batch", handleReceiveMessageBatch);
     };
   }, [currentConversation, selectedConversationId, socketClient, user?.id]);
 
@@ -870,31 +1012,10 @@ function HomePage() {
     setNewMessage("");
 
     try {
-      let targetConversationId = selectedConversationId;
+      const targetConversationId = await resolveConversationTarget();
+      if (!targetConversationId) return;
 
-      if (isVirtualConversationId(targetConversationId)) {
-        const selectedVirtualConversation = conversations.find(
-          (conversation) => conversation.id === selectedConversationId
-        );
-        const friendId = selectedVirtualConversation?.friendId;
-
-        if (!friendId) {
-          console.error("Missing friend id for virtual conversation");
-          return;
-        }
-
-        const createdConversation = await createPrivateConversation([friendId]);
-
-        setConversations((prev) => {
-          const filtered = prev.filter(
-            (conversation) => conversation.id !== selectedConversationId
-          );
-          return [createdConversation, ...filtered];
-        });
-
-        setSelectedConversationId(createdConversation.id);
-        targetConversationId = createdConversation.id;
-      }
+      shouldScrollToBottomRef.current = true;
 
       const sentMessage = await sendMessage({
         conversationId: targetConversationId,
@@ -907,6 +1028,60 @@ function HomePage() {
     } catch (error) {
       setNewMessage((currentValue) => currentValue || messageText);
       console.error("Failed to send message:", error);
+    }
+  };
+
+  const handleSendImage = async (files) => {
+    if (!Array.isArray(files) || files.length === 0 || !selectedConversationId) return;
+
+    try {
+      const targetConversationId = await resolveConversationTarget();
+      if (!targetConversationId) return;
+
+      shouldScrollToBottomRef.current = true;
+
+      const sentMessages = await sendImageMessage({
+        conversationId: targetConversationId,
+        files
+      });
+
+      sentMessages.forEach((message) => {
+        appendMessageWithoutDuplicate(message);
+      });
+
+      const latestMessage = sentMessages[sentMessages.length - 1];
+      if (latestMessage) {
+        updateConversationWithNewMessage(latestMessage);
+      }
+    } catch (error) {
+      console.error("Failed to send image message:", error);
+    }
+  };
+
+  const handleSendFile = async (files) => {
+    if (!Array.isArray(files) || files.length === 0 || !selectedConversationId) return;
+
+    try {
+      const targetConversationId = await resolveConversationTarget();
+      if (!targetConversationId) return;
+
+      shouldScrollToBottomRef.current = true;
+
+      const sentMessages = await sendFileMessage({
+        conversationId: targetConversationId,
+        files
+      });
+
+      sentMessages.forEach((message) => {
+        appendMessageWithoutDuplicate(message);
+      });
+
+      const latestMessage = sentMessages[sentMessages.length - 1];
+      if (latestMessage) {
+        updateConversationWithNewMessage(latestMessage);
+      }
+    } catch (error) {
+      console.error("Failed to send file message:", error);
     }
   };
 
@@ -1217,9 +1392,16 @@ function HomePage() {
         getMessageSenderAvatar={getMessageSenderAvatar}
         formatTime={formatTime}
         messagesEndRef={messagesEndRef}
+        messagesContainerRef={messagesContainerRef}
+        onMessageScroll={handleMessageScroll}
+        isLoadingOlderMessages={isLoadingOlderMessages}
+        hasMoreMessages={hasMoreMessages}
+        isInitialMessagesLoading={isInitialMessagesLoading}
         newMessage={newMessage}
         setNewMessage={setNewMessage}
         handleSendMessage={handleSendMessage}
+        handleSendImage={handleSendImage}
+        handleSendFile={handleSendFile}
       />
 
       <RightPanel openGroupModal={openGroupModal} />

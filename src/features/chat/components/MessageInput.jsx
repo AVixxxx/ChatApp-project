@@ -1,10 +1,12 @@
 import { useRef, useState } from "react";
-import { FaPaperclip, FaMicrophone, FaPaperPlane, FaSmile } from "react-icons/fa";
+import { FaImage, FaMicrophone, FaPaperclip, FaPaperPlane, FaSmile } from "react-icons/fa";
 import EmojiPicker from "./EmojiPicker";
 
-function MessageInput({ newMessage, onChangeNewMessage, onSendMessage }) {
+function MessageInput({ newMessage, onChangeNewMessage, onSendMessage, onSendImage, onSendFile }) {
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const inputRef = useRef(null);
+  const imageInputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const handleEmojiButtonClick = () => {
     if (isEmojiPickerOpen) {
@@ -48,6 +50,24 @@ function MessageInput({ newMessage, onChangeNewMessage, onSendMessage }) {
     inputRef.current?.focus();
   };
 
+  const handleImageChange = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+    if (selectedFiles.length > 0) {
+      onSendImage?.(selectedFiles);
+    }
+
+    event.target.value = "";
+  };
+
+  const handleAttachmentChange = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+    if (selectedFiles.length > 0) {
+      onSendFile?.(selectedFiles);
+    }
+
+    event.target.value = "";
+  };
+
   return (
     <div className="chat-input">
       {isEmojiPickerOpen && (
@@ -80,7 +100,37 @@ function MessageInput({ newMessage, onChangeNewMessage, onSendMessage }) {
       </div>
 
       <div className="chat-input-actions">
-        <FaPaperclip className="input-action-icon" />
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="chat-file-input"
+          onChange={handleImageChange}
+        />
+        <button
+          type="button"
+          className="chat-file-btn"
+          onClick={() => imageInputRef.current?.click()}
+          aria-label="Attach image"
+        >
+          <FaImage className="input-action-icon" />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="chat-file-input"
+          onChange={handleAttachmentChange}
+        />
+        <button
+          type="button"
+          className="chat-file-btn"
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="Attach file"
+        >
+          <FaPaperclip className="input-action-icon" />
+        </button>
         <FaMicrophone className="input-action-icon" />
         <button type="button" className="send-btn" onClick={handleSend}>
           <FaPaperPlane />
