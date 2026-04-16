@@ -24,7 +24,7 @@ function MessageList({
             <div key={message.id} className={`message-row ${isMe ? "me-row" : "other-row"}`}>
               {!isMe && (
                 <img
-                  src={getMessageSenderAvatar(message.sender)}
+                  src={getMessageSenderAvatar(message)}
                   alt="sender"
                   className="message-avatar"
                 />

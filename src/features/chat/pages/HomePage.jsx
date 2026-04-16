@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import "./HomePage.css";
-import socket from "@/socket";
+import socket, { connectSocketWithToken } from "@/socket";
 import {
   getConversations,
   createGroupConversation,
@@ -37,7 +37,7 @@ import FriendProfileModal from "@/features/contacts/components/FriendProfileModa
 
 const getEntityId = (entity) => {
   if (!entity || typeof entity !== "object") return null;
-  return entity.id || entity.conversation_id || entity.message_id || entity._id;
+  return entity.id || entity.message_id || entity.conversation_id || entity._id;
 };
 
 const getUserId = (userEntity) => {
@@ -162,14 +162,21 @@ const isConversationListEquivalent = (currentList, incomingList) => {
 
 function HomePage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [socketClient] = useState(socket);
   const [user, setUser] = useState(() => getStoredAuthUser());
   const [conversations, setConversations] = useState(() => {
     const cached = readHomeConversationsCache();
-    return cached?.conversations || [];
+    const initialConversations = cached?.conversations || [];
+    const routedConversation = location.state?.conversation
+      ? [location.state.conversation]
+      : [];
+
+    return [...routedConversation, ...initialConversations];
   });
   const [selectedConversationId, setSelectedConversationId] = useState(() => {
     const cached = readHomeConversationsCache();
-    return cached?.selectedConversationId || null;
+    return location.state?.conversationId || cached?.selectedConversationId || null;
   });
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
@@ -188,7 +195,69 @@ function HomePage() {
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
   const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
   const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
+  const [currentConversation, setCurrentConversation] = useState(null);
+  const [unreadCountByConversationId, setUnreadCountByConversationId] = useState({});
   const messagesEndRef = useRef(null);
+
+  const getConversationSortTime = (conversation) => {
+    const rawValue =
+      conversation?.updatedAt ||
+      conversation?.lastMessageTime ||
+      conversation?.last_message_time ||
+      conversation?.lastMessage?.createdAt ||
+      conversation?.lastMessage?.created_at;
+
+    if (!rawValue) return 0;
+    const parsed = new Date(rawValue).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const mergeOnlineStateIntoConversation = (incomingConversation, currentConversationItem) => {
+    if (!incomingConversation) return incomingConversation;
+
+    if (incomingConversation.isGroup) {
+      return incomingConversation;
+    }
+
+    const currentMembers = Array.isArray(currentConversationItem?.members)
+      ? currentConversationItem.members
+      : [];
+
+    const mergedMembers = Array.isArray(incomingConversation.members)
+      ? incomingConversation.members.map((member) => {
+          const memberId = getUserId(member);
+          const existingMember = currentMembers.find(
+            (currentMember) => getUserId(currentMember) === memberId
+          );
+
+          if (!existingMember) return member;
+
+          return {
+            ...member,
+            isOnline:
+              existingMember.isOnline ?? member.isOnline ?? existingMember.online ?? member.online,
+            is_online:
+              existingMember.is_online ?? member.is_online ?? existingMember.isOnline ?? member.isOnline,
+            online: existingMember.online ?? member.online ?? existingMember.isOnline ?? member.isOnline
+          };
+        })
+      : incomingConversation.members;
+
+    return {
+      ...incomingConversation,
+      members: mergedMembers
+    };
+  };
+
+  const mergeConversationListPresence = (nextConversations, previousConversations) => {
+    return nextConversations.map((incomingConversation) => {
+      const currentConversationItem = previousConversations.find(
+        (conversation) => conversation.id === incomingConversation.id
+      );
+
+      return mergeOnlineStateIntoConversation(incomingConversation, currentConversationItem);
+    });
+  };
 
   const formatTime = (dateString) => {
     if (!dateString) return "";
@@ -391,6 +460,93 @@ function HomePage() {
     });
   };
 
+  const appendMessageWithoutDuplicate = (message) => {
+    const normalizedCreatedAt =
+      message?.createdAt || message?.created_at || message?.create_at;
+
+    const toTimestamp = (messageItem) => {
+      const value =
+        messageItem?.createdAt || messageItem?.created_at || messageItem?.create_at;
+      const parsed = new Date(value).getTime();
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
+    setMessages((prev) => {
+      const exists = prev.some((existingMessage) => {
+        if (existingMessage.id && message.id) {
+          return existingMessage.id === message.id;
+        }
+
+        const sameConversation =
+          (existingMessage.conversationId || existingMessage.conversation_id) ===
+          (message.conversationId || message.conversation_id);
+        const sameSender =
+          (existingMessage.sender_id || getUserId(existingMessage.sender)) ===
+          (message.sender_id || getUserId(message.sender));
+        const sameText = (existingMessage.text || "") === (message.text || "");
+        const existingCreatedAt =
+          existingMessage.createdAt ||
+          existingMessage.created_at ||
+          existingMessage.create_at;
+        const sameCreatedAt = existingCreatedAt === normalizedCreatedAt;
+
+        return sameConversation && sameSender && sameText && sameCreatedAt;
+      });
+
+      if (exists) return prev;
+      return [...prev, message].sort(
+        (firstMessage, secondMessage) =>
+          toTimestamp(firstMessage) - toTimestamp(secondMessage)
+      );
+    });
+  };
+
+  const handleSelectConversation = async (conversationId) => {
+    if (!conversationId) return;
+
+    if (!isVirtualConversationId(conversationId)) {
+      setSelectedConversationId(conversationId);
+      setUnreadCountByConversationId((prev) => {
+        if (!prev[conversationId]) return prev;
+        const next = { ...prev };
+        delete next[conversationId];
+        return next;
+      });
+      return;
+    }
+
+    const selectedVirtualConversation = conversations.find(
+      (conversation) => conversation.id === conversationId
+    );
+    const friendId = selectedVirtualConversation?.friendId;
+
+    if (!friendId) {
+      console.error("Missing friend id for virtual conversation");
+      return;
+    }
+
+    try {
+      const createdConversation = await createPrivateConversation([friendId]);
+
+      setConversations((prev) => {
+        const filtered = prev.filter(
+          (conversation) => conversation.id !== conversationId
+        );
+        return [createdConversation, ...filtered];
+      });
+
+      setSelectedConversationId(createdConversation.id);
+      setUnreadCountByConversationId((prev) => {
+        const next = { ...prev };
+        delete next[conversationId];
+        delete next[createdConversation.id];
+        return next;
+      });
+    } catch (error) {
+      console.error("Failed to create private conversation:", error);
+    }
+  };
+
   const openGroupModal = async () => {
     try {
       const friends = await getFriends();
@@ -453,9 +609,13 @@ function HomePage() {
   }, [messages]);
 
   useEffect(() => {
+    connectSocketWithToken();
+  }, []);
+
+  useEffect(() => {
     if (!user?.id) return;
-    socket.emit("user_online", user.id);
-  }, [user?.id]);
+    socketClient.emit("user_online", user.id);
+  }, [socketClient, user?.id]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -489,12 +649,12 @@ function HomePage() {
       });
     };
 
-    socket.on("new_conversation", handleNewConversation);
+    socketClient.on("new_conversation", handleNewConversation);
 
     return () => {
-      socket.off("new_conversation", handleNewConversation);
+      socketClient.off("new_conversation", handleNewConversation);
     };
-  }, []);
+  }, [socketClient]);
 
   useEffect(() => {
     writeHomeConversationsCache({ conversations, selectedConversationId });
@@ -513,18 +673,23 @@ function HomePage() {
           friendData
         );
 
+        const mergedWithLiveStatus = mergeConversationListPresence(
+          mergedConversations,
+          conversations
+        );
+
         setConversations((prev) =>
-          isConversationListEquivalent(prev, mergedConversations)
+          isConversationListEquivalent(prev, mergedWithLiveStatus)
             ? prev
-            : mergedConversations
+            : mergedWithLiveStatus
         );
 
         setSelectedConversationId((prev) => {
-          if (prev && mergedConversations.some((conversation) => conversation.id === prev)) {
+          if (prev && mergedWithLiveStatus.some((conversation) => conversation.id === prev)) {
             return prev;
           }
 
-          return mergedConversations[0]?.id || null;
+          return mergedWithLiveStatus[0]?.id || null;
         });
       } catch (error) {
         console.error("Failed to load conversations:", error);
@@ -538,8 +703,19 @@ function HomePage() {
     if (!selectedConversationId || isVirtualConversationId(selectedConversationId)) {
       return;
     }
-    socket.emit("join_conversation", selectedConversationId);
-  }, [selectedConversationId]);
+    socketClient.emit("join_conversation", selectedConversationId);
+
+    return () => {
+      socketClient.emit("leave_conversation", selectedConversationId);
+    };
+  }, [selectedConversationId, socketClient]);
+
+  useEffect(() => {
+    const selected = conversations.find(
+      (conversation) => conversation.id === selectedConversationId
+    );
+    setCurrentConversation(selected || null);
+  }, [conversations, selectedConversationId]);
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -569,27 +745,73 @@ function HomePage() {
       const normalizedMessage = {
         ...message,
         id: getEntityId(message),
+        text:
+          message.text ||
+          message.content ||
+          message.message ||
+          message.last_message ||
+          "",
+        createdAt: message.createdAt || message.created_at || message.create_at,
         conversationId:
           message.conversationId || message.conversation_id || message.conversation
       };
 
       updateConversationWithNewMessage(normalizedMessage);
 
-      if (normalizedMessage.conversationId === selectedConversationId) {
-        setMessages((prev) => {
-          const exists = prev.some((msg) => msg.id === normalizedMessage.id);
-          if (exists) return prev;
-          return [...prev, normalizedMessage];
-        });
+      const normalizedConversationId = String(
+        normalizedMessage.conversationId || ""
+      );
+      const activeConversationId = String(
+        currentConversation?.id || selectedConversationId || ""
+      );
+      const activeFriendId = String(currentConversation?.friendId || "");
+      const messageSenderId = String(
+        normalizedMessage.sender_id || getUserId(normalizedMessage.sender) || ""
+      );
+
+      const isActiveConversationMatch =
+        activeConversationId && !isVirtualConversationId(activeConversationId)
+          ? normalizedConversationId
+            ? normalizedConversationId === activeConversationId
+            : activeConversationId === String(selectedConversationId || "")
+          : normalizedConversationId && activeConversationId
+            ? normalizedConversationId === activeConversationId
+          : false;
+
+      const isActiveVirtualDirectMatch =
+        isVirtualConversationId(selectedConversationId) &&
+        !currentConversation?.isGroup &&
+        activeFriendId &&
+        messageSenderId &&
+        activeFriendId === messageSenderId;
+
+      if (isActiveConversationMatch || isActiveVirtualDirectMatch) {
+        appendMessageWithoutDuplicate(normalizedMessage);
+        return;
+      }
+
+      const normalizedUserId = getSafeId(user?.id);
+      if (
+        normalizedConversationId &&
+        messageSenderId &&
+        normalizedUserId &&
+        messageSenderId !== normalizedUserId
+      ) {
+        setUnreadCountByConversationId((prev) => ({
+          ...prev,
+          [normalizedConversationId]: (prev[normalizedConversationId] || 0) + 1
+        }));
       }
     };
 
-    socket.on("receive_message", handleReceiveMessage);
+    socketClient.on("receive_message", handleReceiveMessage);
+    socketClient.on("new_message", handleReceiveMessage);
 
     return () => {
-      socket.off("receive_message", handleReceiveMessage);
+      socketClient.off("receive_message", handleReceiveMessage);
+      socketClient.off("new_message", handleReceiveMessage);
     };
-  }, [selectedConversationId]);
+  }, [currentConversation, selectedConversationId, socketClient, user?.id]);
 
   useEffect(() => {
     const handleUserStatus = ({ userId, status }) => {
@@ -629,12 +851,12 @@ function HomePage() {
       );
     };
 
-    socket.on("user_status", handleUserStatus);
+    socketClient.on("user_status", handleUserStatus);
 
     return () => {
-      socket.off("user_status", handleUserStatus);
+      socketClient.off("user_status", handleUserStatus);
     };
-  }, []);
+  }, [socketClient]);
 
   useEffect(() => {
     setShowGroupInfoModal(false);
@@ -675,54 +897,79 @@ function HomePage() {
         text: newMessage
       });
 
-      setMessages((prev) => {
-        const exists = prev.some((msg) => msg.id === sentMessage.id);
-        if (exists) return prev;
-        return [...prev, sentMessage];
-      });
+      appendMessageWithoutDuplicate(sentMessage);
 
       updateConversationWithNewMessage(sentMessage);
-      socket.emit("send_message", sentMessage);
       setNewMessage("");
     } catch (error) {
       console.error("Failed to send message:", error);
     }
   };
 
-  const selectedConversation = conversations.find(
-    (conversation) => conversation.id === selectedConversationId
-  );
-
   const selectedOtherMember =
-    selectedConversation?.members?.find(
+    currentConversation?.members?.find(
       (member) => getUserId(member) && getUserId(member) !== user?.id
-    ) || selectedConversation?.members?.[0];
+    ) || currentConversation?.members?.[0];
 
-  const selectedConversationDisplayName = selectedConversation
-    ? selectedConversation.isGroup
-      ? selectedConversation.groupName || "Unnamed Group"
+  const selectedConversationDisplayName = currentConversation
+    ? currentConversation.isGroup
+      ? currentConversation.groupName || "Unnamed Group"
       : getUserDisplayName(selectedOtherMember)
     : "No conversation selected";
 
-  const selectedGroupMembersList = selectedConversation?.isGroup
-    ? selectedConversation.members || []
+  const selectedGroupMembersList = currentConversation?.isGroup
+    ? currentConversation.members || []
     : [];
 
   const selectedGroupMemberCount = selectedGroupMembersList.length;
 
-  const filteredConversations = conversations.filter((conversation) =>
-    getConversationDisplayName(conversation)
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase().trim())
-  );
+  const filteredConversations = [...conversations]
+    .sort((firstConversation, secondConversation) => {
+      return (
+        getConversationSortTime(secondConversation) -
+        getConversationSortTime(firstConversation)
+      );
+    })
+    .filter((conversation) =>
+      getConversationDisplayName(conversation)
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase().trim())
+    );
 
   const sidebarAvatar = getAvatarUrl(user);
-  const headerAvatar = selectedConversation
-    ? getConversationAvatar(selectedConversation)
+  const headerAvatar = currentConversation
+    ? getConversationAvatar(currentConversation)
     : getAvatarUrl(user);
 
-  const getMessageSenderAvatar = (sender) =>
-    getAvatarUrl(sender, MESSAGE_SENDER_AVATAR_URL);
+  const getMessageSenderAvatar = (message) => {
+    const directSender = message?.sender;
+    if (directSender && typeof directSender === "object") {
+      return getAvatarUrl(directSender, MESSAGE_SENDER_AVATAR_URL);
+    }
+
+    const senderId = getSafeId(message?.sender_id || getUserId(directSender));
+    if (!senderId) {
+      return MESSAGE_SENDER_AVATAR_URL;
+    }
+
+    const members = Array.isArray(currentConversation?.members)
+      ? currentConversation.members
+      : [];
+
+    const matchedMember = members.find(
+      (member) => getSafeId(getUserId(member)) === senderId
+    );
+
+    if (matchedMember) {
+      return getAvatarUrl(matchedMember, MESSAGE_SENDER_AVATAR_URL);
+    }
+
+    if (getSafeId(user?.id) === senderId) {
+      return getAvatarUrl(user, MESSAGE_SENDER_AVATAR_URL);
+    }
+
+    return MESSAGE_SENDER_AVATAR_URL;
+  };
 
   const getGroupInfoMemberAvatar = (member) =>
     getAvatarUrl(member, GROUP_INFO_MEMBER_AVATAR_URL);
@@ -895,7 +1142,7 @@ function HomePage() {
     };
   };
 
-  const selectedStatusInfo = getDirectChatStatusInfo(selectedConversation);
+  const selectedStatusInfo = getDirectChatStatusInfo(currentConversation);
 
   const handleOpenFriendProfileFromConversation = (conversation) => {
     if (!conversation || conversation.isGroup) return;
@@ -939,19 +1186,20 @@ function HomePage() {
         conversations={conversations}
         filteredConversations={filteredConversations}
         selectedConversationId={selectedConversationId}
-        onSelectConversation={setSelectedConversationId}
+        onSelectConversation={handleSelectConversation}
         getConversationAvatar={getConversationAvatar}
         getConversationDisplayName={getConversationDisplayName}
         getConversationStatusText={(conversation) =>
           getDirectChatStatusInfo(conversation)?.text || "Offline"
         }
+        getUnreadCount={(conversation) => unreadCountByConversationId[conversation?.id] || 0}
         formatConversationTime={formatConversationTime}
         getConversationPreview={getConversationPreview}
         onAvatarClick={handleOpenFriendProfileFromConversation}
       />
 
       <ChatWindow
-        selectedConversation={selectedConversation}
+        selectedConversation={currentConversation}
         selectedConversationDisplayName={selectedConversationDisplayName}
         selectedGroupMemberCount={selectedGroupMemberCount}
         headerStatusText={selectedStatusInfo?.text || "Offline"}
@@ -974,7 +1222,7 @@ function HomePage() {
 
       <GroupInfoModal
         show={showGroupInfoModal}
-        selectedConversation={selectedConversation}
+        selectedConversation={currentConversation}
         selectedGroupMemberCount={selectedGroupMemberCount}
         selectedGroupMembersList={selectedGroupMembersList}
         close={() => setShowGroupInfoModal(false)}

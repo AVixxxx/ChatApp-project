@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaComments, FaPhoneAlt, FaAddressBook, FaCloudUploadAlt, FaBriefcase, FaCog } from "react-icons/fa";
+import { disconnectSocket } from "@/socket";
 import SettingsMenu from "./SettingsMenu";
 
 function Sidebar({
@@ -40,6 +41,7 @@ function Sidebar({
   };
 
   const handleLogout = () => {
+    disconnectSocket();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setShowMenu(false);

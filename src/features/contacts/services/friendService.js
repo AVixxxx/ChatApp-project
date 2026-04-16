@@ -5,6 +5,11 @@ import { getAvatarUrl, normalizeUserEntity } from "@/utils/userNormalizer";
 
 const FRIENDS_API_URL = `${API_URL}/api/friends`;
 
+const friendApi = axios.create({
+  baseURL: API_URL,
+  validateStatus: (status) => (status >= 200 && status < 300) || status === 304
+});
+
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");
   return {
@@ -13,22 +18,34 @@ const getAuthHeaders = () => {
 };
 
 const fetchFriendRelations = async () => {
-  const response = await axios.get(FRIENDS_API_URL, {
+  const response = await friendApi.get("/api/friends", {
+    params: {
+      _t: Date.now()
+    },
     headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
       ...getAuthHeaders()
     }
   });
 
+  if (response.status === 304) return [];
   return Array.isArray(response.data) ? response.data : [];
 };
 
 const fetchIncomingFriendRequests = async () => {
-  const response = await axios.get(`${FRIENDS_API_URL}/request`, {
+  const response = await friendApi.get("/api/friends/request", {
+    params: {
+      _t: Date.now()
+    },
     headers: {
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
       ...getAuthHeaders()
     }
   });
 
+  if (response.status === 304) return [];
   return Array.isArray(response.data) ? response.data : [];
 };
 

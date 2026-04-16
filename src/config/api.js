@@ -1,5 +1,3 @@
-export const API_URL =
-  import.meta.env.VITE_API_URL || "https://be-chatbox-1.onrender.com";
-
-export const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL || API_URL;
+export const BASE_URL = "https://be-chatbox-1.onrender.com";
+export const API_URL = BASE_URL;
+export const SOCKET_URL = BASE_URL;

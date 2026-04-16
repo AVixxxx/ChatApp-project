@@ -296,6 +296,12 @@
   color: #9d9d9d;
 }
 
+.conversation-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .conversation-bottom {
   display: flex;
   justify-content: space-between;

@@ -12,6 +12,7 @@ function ConversationList({
   getConversationAvatar,
   getConversationDisplayName,
   getConversationStatusText,
+  getUnreadCount,
   formatConversationTime,
   getConversationPreview,
   onAvatarClick
@@ -52,14 +53,17 @@ function ConversationList({
       ) : filteredConversations.length === 0 ? (
         <p className="empty-text">No matching conversations.</p>
       ) : (
-        filteredConversations.map((conversation) => (
-          <div
-            key={conversation.id}
-            className={`conversation ${
-              selectedConversationId === conversation.id ? "selected" : ""
-            }`}
-            onClick={() => onSelectConversation(conversation.id)}
-          >
+        filteredConversations.map((conversation) => {
+          const unreadCount = Number(getUnreadCount?.(conversation) || 0);
+
+          return (
+            <div
+              key={conversation.id}
+              className={`conversation ${
+                selectedConversationId === conversation.id ? "selected" : ""
+              }`}
+              onClick={() => onSelectConversation(conversation.id)}
+            >
             <button
               type="button"
               className="conversation-avatar-btn"
@@ -74,9 +78,16 @@ function ConversationList({
             <div className="conversation-content">
               <div className="conversation-top">
                 <h4>{getConversationDisplayName(conversation)}</h4>
-                <span className="conversation-time">
-                  {formatConversationTime(conversation.lastMessageTime)}
-                </span>
+                <div className="conversation-meta">
+                  <span className="conversation-time">
+                    {formatConversationTime(conversation.lastMessageTime)}
+                  </span>
+                  {unreadCount > 0 && (
+                    <span className="unread-badge" aria-label={`${unreadCount} unread messages`}>
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="conversation-bottom">
                 <p>{getConversationPreview(conversation)}</p>
@@ -94,8 +105,9 @@ function ConversationList({
                 )}
               </div>
             </div>
-          </div>
-        ))
+            </div>
+          );
+        })
       )}
     </div>
   );

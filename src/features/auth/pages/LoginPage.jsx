@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { loginUser } from "@/features/auth/services/authService";
 import { saveAuthUserToStorage } from "@/utils/userNormalizer";
+import { connectSocketWithToken } from "@/socket";
 import facebookIcon from "@/assets/icons/facebook.png";
 import googleIcon from "@/assets/icons/google.png";
 import appleIcon from "@/assets/icons/apple.png";
@@ -44,6 +45,7 @@ function LoginPage() {
 
       localStorage.setItem("token", data.token);
       saveAuthUserToStorage(data.user);
+      connectSocketWithToken();
 
       setSuccess("Login successful. Redirecting...");
 

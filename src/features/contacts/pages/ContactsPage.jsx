@@ -22,7 +22,7 @@ import {
   saveAuthUserToStorage
 } from "@/utils/userNormalizer";
 import { prefetchHomeConversationsCache } from "@/utils/homeConversationCache";
-import socket from "@/socket";
+import socket, { connectSocketWithToken } from "@/socket";
 import "@/features/chat/pages/HomePage.css";
 import "./ContactsPage.css";
 
@@ -78,6 +78,29 @@ const parsePresenceStatus = (statusValue) => {
   return false;
 };
 
+const mergeContactPresence = (nextContacts, previousContacts) => {
+  return nextContacts.map((contact) => {
+    const previousContact = previousContacts.find(
+      (item) => String(item?.id || "") === String(contact?.id || "")
+    );
+
+    if (!previousContact) return contact;
+
+    const previousIsOnline = parsePresenceStatus(
+      previousContact.isOnline ?? previousContact.is_online ?? previousContact.online
+    );
+
+    return {
+      ...contact,
+      isOnline: previousIsOnline || parsePresenceStatus(contact.isOnline ?? contact.is_online ?? contact.online),
+      is_online:
+        previousIsOnline || parsePresenceStatus(contact.isOnline ?? contact.is_online ?? contact.online),
+      online:
+        previousIsOnline || parsePresenceStatus(contact.isOnline ?? contact.is_online ?? contact.online)
+    };
+  });
+};
+
 function ContactsPage() {
   const cachedContactsState = readContactsCache();
   const navigate = useNavigate();
@@ -105,9 +128,13 @@ function ContactsPage() {
       getFriendRequests(userId)
     ]);
 
-    setContacts(friendData);
+    setContacts((previousContacts) => mergeContactPresence(friendData, previousContacts));
     setRequests(requestData);
   };
+
+  useEffect(() => {
+    connectSocketWithToken();
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -121,7 +148,7 @@ function ContactsPage() {
       try {
         const friendData = await getFriendList(userId);
         if (mounted) {
-          setContacts(friendData);
+          setContacts((previousContacts) => mergeContactPresence(friendData, previousContacts));
         }
       } catch (error) {
         console.error("Failed to load friend list:", error);
@@ -326,12 +353,17 @@ function ContactsPage() {
   const handleMessageFriend = async (contact) => {
     try {
       if (contact?.id) {
-        await createPrivateConversation([contact.id]);
+        const createdConversation = await createPrivateConversation([contact.id]);
+        navigate("/home", {
+          state: {
+            conversationId: createdConversation?.id || null,
+            conversation: createdConversation || null
+          }
+        });
+        return;
       }
     } catch (error) {
       console.error("Failed to create conversation:", error);
-    } finally {
-      navigate("/home");
     }
   };
 

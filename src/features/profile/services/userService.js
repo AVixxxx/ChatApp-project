@@ -1,6 +1,6 @@
 import axios from "axios";
 import { API_URL } from "@/config/api";
-import { normalizeUserEntity } from "@/utils/userNormalizer";
+import { getStoredAuthUser, normalizeUserEntity } from "@/utils/userNormalizer";
 
 const AUTH_API_URL = `${API_URL}/api/auth`;
 const FRIENDS_API_URL = `${API_URL}/api/friends`;
@@ -17,7 +17,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const shouldRetry = (error) => {
   const status = error?.response?.status;
-  return !status || RETRYABLE_STATUSES.has(status);
+  return RETRYABLE_STATUSES.has(status);
 };
 
 const requestWithRetry = async (requestFn, maxAttempts = 3) => {
@@ -41,29 +41,52 @@ const requestWithRetry = async (requestFn, maxAttempts = 3) => {
 };
 
 export const getMe = async () => {
-  const response = await requestWithRetry(() =>
-    axios.get(`${AUTH_API_URL}/me`, {
-      headers: {
-        ...getAuthHeaders()
-      }
-    })
-  );
+  try {
+    const response = await requestWithRetry(() =>
+      axios.get(`${AUTH_API_URL}/me`, {
+        headers: {
+          ...getAuthHeaders()
+        }
+      })
+    );
 
-  return normalizeUser(response.data);
+    return normalizeUser(response.data);
+  } catch (error) {
+    const status = error?.response?.status;
+    if (status === 401 || status === 403) {
+      throw error;
+    }
+
+    const cachedUser = getStoredAuthUser();
+    if (cachedUser?.id) {
+      return normalizeUser(cachedUser);
+    }
+
+    throw error;
+  }
 };
 
 export const getFriends = async () => {
-  const response = await requestWithRetry(() =>
-    axios.get(FRIENDS_API_URL, {
-      headers: {
-        ...getAuthHeaders()
-      }
-    })
-  );
+  try {
+    const response = await requestWithRetry(() =>
+      axios.get(FRIENDS_API_URL, {
+        headers: {
+          ...getAuthHeaders()
+        }
+      })
+    );
 
-  return Array.isArray(response.data)
-    ? response.data.map(normalizeUser)
-    : [];
+    return Array.isArray(response.data)
+      ? response.data.map(normalizeUser)
+      : [];
+  } catch (error) {
+    const status = error?.response?.status;
+    if (status === 401 || status === 403) {
+      throw error;
+    }
+
+    return [];
+  }
 };
 
 export const updateMe = async (payload, avatarFile = null) => {
