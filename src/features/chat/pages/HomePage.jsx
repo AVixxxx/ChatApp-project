@@ -863,7 +863,11 @@ function HomePage() {
   }, [selectedConversationId]);
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversationId) return;
+    const messageText = newMessage.trim();
+
+    if (!messageText || !selectedConversationId) return;
+
+    setNewMessage("");
 
     try {
       let targetConversationId = selectedConversationId;
@@ -894,14 +898,14 @@ function HomePage() {
 
       const sentMessage = await sendMessage({
         conversationId: targetConversationId,
-        text: newMessage
+        text: messageText
       });
 
       appendMessageWithoutDuplicate(sentMessage);
 
       updateConversationWithNewMessage(sentMessage);
-      setNewMessage("");
     } catch (error) {
+      setNewMessage((currentValue) => currentValue || messageText);
       console.error("Failed to send message:", error);
     }
   };
