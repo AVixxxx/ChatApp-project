@@ -97,7 +97,7 @@ export const getMessagesPage = async (conversationId, options = {}) => {
       : [];
 
   return {
-    messages: payload.map(normalizeMessage),
+    messages: sortMessagesOldestFirst(payload.map(normalizeMessage)),
     nextCursor: response.data?.nextCursor || null
   };
 };
