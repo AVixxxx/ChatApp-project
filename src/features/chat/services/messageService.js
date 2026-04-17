@@ -226,4 +226,14 @@ export const sendFileMessage = async ({ conversationId, files = [] }) => {
   return payload.map(normalizeMessage);
 };
 
+export const deleteMessage = async (messageId) => {
+  const response = await chatApi.post(
+    `${MESSAGE_API_PATH}/delete`,
+    { message_id: messageId },
+    getApiHeaders()
+  );
+
+  return response.data;
+};
+
 export { normalizeMessage };

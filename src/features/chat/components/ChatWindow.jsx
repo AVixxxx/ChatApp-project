@@ -27,8 +27,8 @@ function ChatWindow({
   newMessage,
   setNewMessage,
   handleSendMessage,
-  handleSendImage,
-  handleSendFile
+  handleDeleteMessage,
+  handleDeleteMessageGroup
 }) {
   const [selectedImage, setSelectedImage] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -207,6 +207,8 @@ function ChatWindow({
         onCopyImage={copyImageMessage}
         onDownloadImage={downloadAttachmentMessage}
         onDownloadFile={downloadAttachmentMessage}
+        onDeleteMessage={handleDeleteMessage}
+        onDeleteMessageGroup={handleDeleteMessageGroup}
       />
 
       <ImagePreviewModal
@@ -221,8 +223,6 @@ function ChatWindow({
         newMessage={newMessage}
         onChangeNewMessage={setNewMessage}
         onSendMessage={handleSendMessage}
-        onSendImage={handleSendImage}
-        onSendFile={handleSendFile}
       />
     </div>
   );

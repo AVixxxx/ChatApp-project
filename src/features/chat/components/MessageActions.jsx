@@ -6,10 +6,13 @@ function MessageActions({
   message,
   onToggle,
   onClose,
+  canDelete,
   onCopyMessage,
   onCopyImage,
   onDownloadImage,
-  onDownloadFile
+  onDownloadFile,
+  onDeleteMessage,
+  onDeleteMessageGroup
 }) {
   const menuRef = useRef(null);
 
@@ -30,6 +33,8 @@ function MessageActions({
   }, [isOpen, onClose]);
 
   const messageType = message?.type || message?.messageType || message?.message_type || (message?.fileUrl || message?.file_url ? "file" : "text");
+  const groupedItems = Array.isArray(message?.groupedItems) ? message.groupedItems : [];
+  const hasGroupedItems = groupedItems.length > 1;
 
   return (
     <div className="message-actions-wrap" ref={menuRef}>
@@ -69,29 +74,97 @@ function MessageActions({
               >
                 Download image
               </button>
+              {canDelete && (
+                <>
+                  <button
+                    type="button"
+                    className="message-action-item"
+                    onClick={() => {
+                      onDeleteMessage?.(message);
+                      onClose?.();
+                    }}
+                  >
+                    Delete image
+                  </button>
+                  {hasGroupedItems && (
+                    <button
+                      type="button"
+                      className="message-action-item"
+                      onClick={() => {
+                        onDeleteMessageGroup?.(message);
+                        onClose?.();
+                      }}
+                    >
+                      Delete all in group
+                    </button>
+                  )}
+                </>
+              )}
             </>
           ) : messageType === "file" ? (
-            <button
-              type="button"
-              className="message-action-item"
-              onClick={() => {
-                onDownloadFile?.(message);
-                onClose?.();
-              }}
-            >
-              Download file
-            </button>
+            <>
+              <button
+                type="button"
+                className="message-action-item"
+                onClick={() => {
+                  onDownloadFile?.(message);
+                  onClose?.();
+                }}
+              >
+                Download file
+              </button>
+              {canDelete && (
+                <>
+                  <button
+                    type="button"
+                    className="message-action-item"
+                    onClick={() => {
+                      onDeleteMessage?.(message);
+                      onClose?.();
+                    }}
+                  >
+                    Delete file
+                  </button>
+                  {hasGroupedItems && (
+                    <button
+                      type="button"
+                      className="message-action-item"
+                      onClick={() => {
+                        onDeleteMessageGroup?.(message);
+                        onClose?.();
+                      }}
+                    >
+                      Delete all in group
+                    </button>
+                  )}
+                </>
+              )}
+            </>
           ) : (
-            <button
-              type="button"
-              className="message-action-item"
-              onClick={() => {
-                onCopyMessage?.(message);
-                onClose?.();
-              }}
-            >
-              Copy message
-            </button>
+            <>
+              <button
+                type="button"
+                className="message-action-item"
+                onClick={() => {
+                  onCopyMessage?.(message);
+                  onClose?.();
+                }}
+              >
+                Copy message
+              </button>
+              {canDelete && (
+                <button
+                  type="button"
+                  className="message-action-item"
+                  onClick={() => {
+                    onDeleteMessage?.(message);
+                    onClose?.();
+                  }}
+                >
+                  Delete message
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

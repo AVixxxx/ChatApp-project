@@ -1,12 +1,23 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FaImage, FaMicrophone, FaPaperclip, FaPaperPlane, FaSmile } from "react-icons/fa";
 import EmojiPicker from "./EmojiPicker";
 
-function MessageInput({ newMessage, onChangeNewMessage, onSendMessage, onSendImage, onSendFile }) {
+function MessageInput({ newMessage, onChangeNewMessage, onSendMessage }) {
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [draftAttachments, setDraftAttachments] = useState([]);
   const inputRef = useRef(null);
   const imageInputRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      draftAttachments.forEach((attachment) => {
+        if (attachment?.previewUrl) {
+          window.URL.revokeObjectURL(attachment.previewUrl);
+        }
+      });
+    };
+  }, [draftAttachments]);
 
   const handleEmojiButtonClick = () => {
     if (isEmojiPickerOpen) {
@@ -44,16 +55,70 @@ function MessageInput({ newMessage, onChangeNewMessage, onSendMessage, onSendIma
     });
   };
 
-  const handleSend = () => {
+  const createDraftAttachment = (file, kind) => {
+    const previewUrl = window.URL.createObjectURL(file);
+    return {
+      id: `${kind}-${file.name}-${file.size}-${file.lastModified}`,
+      file,
+      kind,
+      name: file.name,
+      previewUrl
+    };
+  };
+
+  const removeDraftAttachment = (attachmentId) => {
+    setDraftAttachments((currentAttachments) => {
+      const nextAttachments = currentAttachments.filter((attachment) => {
+        if (attachment.id !== attachmentId) return true;
+        if (attachment.previewUrl) {
+          window.URL.revokeObjectURL(attachment.previewUrl);
+        }
+        return false;
+      });
+
+      return nextAttachments;
+    });
+  };
+
+  const clearDraftAttachments = () => {
+    setDraftAttachments((currentAttachments) => {
+      currentAttachments.forEach((attachment) => {
+        if (attachment.previewUrl) {
+          window.URL.revokeObjectURL(attachment.previewUrl);
+        }
+      });
+
+      return [];
+    });
+  };
+
+  const handleSend = async () => {
     setIsEmojiPickerOpen(false);
-    onSendMessage();
-    inputRef.current?.focus();
+
+    const payload = {
+      text: newMessage,
+      attachments: draftAttachments.map((attachment) => ({
+        kind: attachment.kind,
+        file: attachment.file
+      }))
+    };
+
+    try {
+      await onSendMessage(payload);
+      onChangeNewMessage("");
+      clearDraftAttachments();
+    } finally {
+      inputRef.current?.focus();
+    }
   };
 
   const handleImageChange = (event) => {
     const selectedFiles = Array.from(event.target.files || []);
     if (selectedFiles.length > 0) {
-      onSendImage?.(selectedFiles);
+      setDraftAttachments((currentAttachments) => [
+        ...currentAttachments,
+        ...selectedFiles.map((file) => createDraftAttachment(file, "image"))
+      ]);
     }
 
     event.target.value = "";
@@ -62,7 +127,10 @@ function MessageInput({ newMessage, onChangeNewMessage, onSendMessage, onSendIma
   const handleAttachmentChange = (event) => {
     const selectedFiles = Array.from(event.target.files || []);
     if (selectedFiles.length > 0) {
-      onSendFile?.(selectedFiles);
+      setDraftAttachments((currentAttachments) => [
+        ...currentAttachments,
+        ...selectedFiles.map((file) => createDraftAttachment(file, "file"))
+      ]);
     }
 
     event.target.value = "";
@@ -75,6 +143,36 @@ function MessageInput({ newMessage, onChangeNewMessage, onSendMessage, onSendIma
           onSelectEmoji={handleSelectEmoji}
           onClose={() => setIsEmojiPickerOpen(false)}
         />
+      )}
+
+      {draftAttachments.length > 0 && (
+        <div className="chat-input-preview-row" aria-label="File previews">
+          {draftAttachments.map((attachment) => (
+            <div key={attachment.id} className="chat-input-preview-item">
+              {attachment.kind === "image" ? (
+                <img
+                  src={attachment.previewUrl}
+                  alt={attachment.name}
+                  className="chat-input-preview-image"
+                />
+              ) : (
+                <div className="chat-input-preview-file">
+                  <FaPaperclip className="chat-input-preview-file-icon" />
+                  <span>{attachment.name}</span>
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="chat-input-preview-remove"
+                onClick={() => removeDraftAttachment(attachment.id)}
+                aria-label={`Remove ${attachment.name}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       <div className="chat-input-left">

@@ -10,8 +10,7 @@ import {
 import {
   getMessagesPage,
   sendMessage,
-  sendImageMessage,
-  sendFileMessage,
+  deleteMessage as deleteMessageApi,
   normalizeMessage
 } from "@/features/chat/services/messageService";
 import { findAccount } from "@/features/auth/services/authService";
@@ -201,8 +200,8 @@ function HomePage() {
   const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [unreadCountByConversationId, setUnreadCountByConversationId] = useState({});
-  const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const messagesEndRef = useRef(null);
   const shouldScrollToBottomRef = useRef(false);
   const pendingPrependScrollRef = useRef(null);
   const isLoadingOlderMessagesRef = useRef(false);
@@ -211,70 +210,12 @@ function HomePage() {
   const [isInitialMessagesLoading, setIsInitialMessagesLoading] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
 
-  const getConversationSortTime = (conversation) => {
-    const rawValue =
-      conversation?.updatedAt ||
-      conversation?.lastMessageTime ||
-      conversation?.last_message_time ||
-      conversation?.lastMessage?.createdAt ||
-      conversation?.lastMessage?.created_at;
-
-    if (!rawValue) return 0;
-    const parsed = new Date(rawValue).getTime();
-    return Number.isNaN(parsed) ? 0 : parsed;
-  };
-
-  const mergeOnlineStateIntoConversation = (incomingConversation, currentConversationItem) => {
-    if (!incomingConversation) return incomingConversation;
-
-    if (incomingConversation.isGroup) {
-      return incomingConversation;
-    }
-
-    const currentMembers = Array.isArray(currentConversationItem?.members)
-      ? currentConversationItem.members
-      : [];
-
-    const mergedMembers = Array.isArray(incomingConversation.members)
-      ? incomingConversation.members.map((member) => {
-          const memberId = getUserId(member);
-          const existingMember = currentMembers.find(
-            (currentMember) => getUserId(currentMember) === memberId
-          );
-
-          if (!existingMember) return member;
-
-          return {
-            ...member,
-            isOnline:
-              existingMember.isOnline ?? member.isOnline ?? existingMember.online ?? member.online,
-            is_online:
-              existingMember.is_online ?? member.is_online ?? existingMember.isOnline ?? member.isOnline,
-            online: existingMember.online ?? member.online ?? existingMember.isOnline ?? member.isOnline
-          };
-        })
-      : incomingConversation.members;
-
-    return {
-      ...incomingConversation,
-      members: mergedMembers
-    };
-  };
-
-  const mergeConversationListPresence = (nextConversations, previousConversations) => {
-    return nextConversations.map((incomingConversation) => {
-      const currentConversationItem = previousConversations.find(
-        (conversation) => conversation.id === incomingConversation.id
-      );
-
-      return mergeOnlineStateIntoConversation(incomingConversation, currentConversationItem);
-    });
-  };
-
   const formatTime = (dateString) => {
     if (!dateString) return "";
 
     const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return "";
+
     return date.toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit"
@@ -299,6 +240,25 @@ function HomePage() {
       month: "short",
       day: "numeric"
     });
+  };
+
+  const getConversationSortTime = (conversation) => {
+    const rawValue =
+      conversation?.updatedAt ||
+      conversation?.lastMessageTime ||
+      conversation?.last_message_time ||
+      conversation?.lastMessage?.createdAt ||
+      conversation?.lastMessage?.created_at ||
+      conversation?.last_time ||
+      conversation?.lastTime ||
+      conversation?.last_message_at ||
+      conversation?.createdAt ||
+      conversation?.created_at ||
+      conversation?.create_at ||
+      0;
+
+    const parsed = new Date(rawValue).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
   };
 
   const getConversationPreview = (conversation) => {
@@ -446,6 +406,53 @@ function HomePage() {
     return [...sanitizedConversations, ...virtualConversations];
   };
 
+  const mergeOnlineStateIntoConversation = (incomingConversation, currentConversationItem) => {
+    if (!incomingConversation) return incomingConversation;
+
+    if (incomingConversation.isGroup) {
+      return incomingConversation;
+    }
+
+    const currentMembers = Array.isArray(currentConversationItem?.members)
+      ? currentConversationItem.members
+      : [];
+
+    const mergedMembers = Array.isArray(incomingConversation.members)
+      ? incomingConversation.members.map((member) => {
+          const memberId = getUserId(member);
+          const existingMember = currentMembers.find(
+            (currentMember) => getUserId(currentMember) === memberId
+          );
+
+          if (!existingMember) return member;
+
+          return {
+            ...member,
+            isOnline:
+              existingMember.isOnline ?? member.isOnline ?? existingMember.online ?? member.online,
+            is_online:
+              existingMember.is_online ?? member.is_online ?? existingMember.isOnline ?? member.isOnline,
+            online: existingMember.online ?? member.online ?? existingMember.isOnline ?? member.isOnline
+          };
+        })
+      : incomingConversation.members;
+
+    return {
+      ...incomingConversation,
+      members: mergedMembers
+    };
+  };
+
+  const mergeConversationListPresence = (nextConversations, previousConversations) => {
+    return nextConversations.map((incomingConversation) => {
+      const currentConversationItem = previousConversations.find(
+        (conversation) => conversation.id === incomingConversation.id
+      );
+
+      return mergeOnlineStateIntoConversation(incomingConversation, currentConversationItem);
+    });
+  };
+
   const updateConversationWithNewMessage = (message) => {
     const targetConversationId = message.conversationId || message.conversation_id;
     if (!targetConversationId) return;
@@ -539,6 +546,41 @@ function HomePage() {
           toTimestamp(firstMessage) - toTimestamp(secondMessage)
       );
     });
+  };
+
+  const removeMessagesByIds = (messageIds) => {
+    const idSet = new Set(
+      (Array.isArray(messageIds) ? messageIds : [messageIds])
+        .map((value) => getSafeId(value))
+        .filter(Boolean)
+    );
+
+    if (idSet.size === 0) return;
+
+    setMessages((prev) =>
+      prev.filter((message) => !idSet.has(getSafeId(getEntityId(message))))
+    );
+  };
+
+  const getApiErrorMessage = (error, fallbackMessage) => {
+    const responseData = error?.response?.data;
+
+    if (typeof responseData === "string" && responseData.trim()) {
+      return responseData;
+    }
+
+    if (responseData && typeof responseData === "object") {
+      const candidate = responseData.error || responseData.message;
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate;
+      }
+    }
+
+    if (typeof error?.message === "string" && error.message.trim()) {
+      return error.message;
+    }
+
+    return fallbackMessage;
   };
 
   const isNearBottom = () => {
@@ -944,14 +986,25 @@ function HomePage() {
       });
     };
 
+    const handleDeleteMessage = (payload) => {
+      const deletedMessageId =
+        payload?.messageId || payload?.message_id || payload?.id;
+
+      if (!deletedMessageId) return;
+
+      removeMessagesByIds([deletedMessageId]);
+    };
+
     socketClient.on("receive_message", handleReceiveMessage);
     socketClient.on("new_message", handleReceiveMessage);
     socketClient.on("new_messages_batch", handleReceiveMessageBatch);
+    socketClient.on("delete message", handleDeleteMessage);
 
     return () => {
       socketClient.off("receive_message", handleReceiveMessage);
       socketClient.off("new_message", handleReceiveMessage);
       socketClient.off("new_messages_batch", handleReceiveMessageBatch);
+      socketClient.off("delete message", handleDeleteMessage);
     };
   }, [currentConversation, selectedConversationId, socketClient, user?.id]);
 
@@ -1004,84 +1057,105 @@ function HomePage() {
     setShowGroupInfoModal(false);
   }, [selectedConversationId]);
 
-  const handleSendMessage = async () => {
-    const messageText = newMessage.trim();
+  const handleSendMessage = async (payload = {}) => {
+    const messageText = String(payload?.text ?? newMessage ?? "").trim();
+    const attachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
 
-    if (!messageText || !selectedConversationId) return;
+    if (!messageText && attachments.length === 0) return;
 
-    setNewMessage("");
+    const targetConversationId = await resolveConversationTarget();
+    if (!targetConversationId) return;
+
+    shouldScrollToBottomRef.current = true;
 
     try {
-      const targetConversationId = await resolveConversationTarget();
-      if (!targetConversationId) return;
+      const files = attachments
+        .map((attachment) => attachment?.file)
+        .filter(Boolean);
 
-      shouldScrollToBottomRef.current = true;
+      const hasFiles = files.length > 0;
+      const messageType = hasFiles
+        ? attachments.every((attachment) => attachment?.kind === "image")
+          ? "image"
+          : "file"
+        : "text";
 
-      const sentMessage = await sendMessage({
+      const sentPayload = await sendMessage({
         conversationId: targetConversationId,
-        text: messageText
+        text: messageText,
+        files: hasFiles ? files : undefined,
+        messageType
       });
 
-      appendMessageWithoutDuplicate(sentMessage);
+      const sentMessages = Array.isArray(sentPayload) ? sentPayload : [sentPayload];
 
-      updateConversationWithNewMessage(sentMessage);
+      sentMessages.filter(Boolean).forEach((message) => {
+        appendMessageWithoutDuplicate(message);
+      });
+
+      const latestMessage = sentMessages[sentMessages.length - 1];
+      if (latestMessage) {
+        updateConversationWithNewMessage(latestMessage);
+      }
+
+      setNewMessage("");
     } catch (error) {
-      setNewMessage((currentValue) => currentValue || messageText);
       console.error("Failed to send message:", error);
+      throw error;
     }
   };
 
-  const handleSendImage = async (files) => {
-    if (!Array.isArray(files) || files.length === 0 || !selectedConversationId) return;
+  const handleDeleteMessage = async (message) => {
+    const messageId = getEntityId(message);
+    if (!messageId) return;
+
+    const isConfirmed = window.confirm("Delete this message?");
+    if (!isConfirmed) return;
 
     try {
-      const targetConversationId = await resolveConversationTarget();
-      if (!targetConversationId) return;
-
-      shouldScrollToBottomRef.current = true;
-
-      const sentMessages = await sendImageMessage({
-        conversationId: targetConversationId,
-        files
-      });
-
-      sentMessages.forEach((message) => {
-        appendMessageWithoutDuplicate(message);
-      });
-
-      const latestMessage = sentMessages[sentMessages.length - 1];
-      if (latestMessage) {
-        updateConversationWithNewMessage(latestMessage);
-      }
+      await deleteMessageApi(messageId);
+      removeMessagesByIds([messageId]);
     } catch (error) {
-      console.error("Failed to send image message:", error);
+      console.error("Failed to delete message:", error);
+      alert(getApiErrorMessage(error, "Cannot delete this message right now."));
     }
   };
 
-  const handleSendFile = async (files) => {
-    if (!Array.isArray(files) || files.length === 0 || !selectedConversationId) return;
+  const handleDeleteMessageGroup = async (message) => {
+    const groupedItems = Array.isArray(message?.groupedItems)
+      ? message.groupedItems
+      : [];
+    const targets = groupedItems.length > 0 ? groupedItems : [message];
+    const targetIds = targets
+      .map((item) => getEntityId(item))
+      .filter(Boolean);
+
+    if (targetIds.length === 0) return;
+
+    const isConfirmed = window.confirm(
+      `Delete all ${targetIds.length} messages in this group?`
+    );
+    if (!isConfirmed) return;
 
     try {
-      const targetConversationId = await resolveConversationTarget();
-      if (!targetConversationId) return;
+      const results = await Promise.allSettled(
+        targetIds.map((id) => deleteMessageApi(id))
+      );
 
-      shouldScrollToBottomRef.current = true;
+      const succeededIds = targetIds.filter(
+        (_, index) => results[index]?.status === "fulfilled"
+      );
 
-      const sentMessages = await sendFileMessage({
-        conversationId: targetConversationId,
-        files
-      });
+      if (succeededIds.length > 0) {
+        removeMessagesByIds(succeededIds);
+      }
 
-      sentMessages.forEach((message) => {
-        appendMessageWithoutDuplicate(message);
-      });
-
-      const latestMessage = sentMessages[sentMessages.length - 1];
-      if (latestMessage) {
-        updateConversationWithNewMessage(latestMessage);
+      if (succeededIds.length !== targetIds.length) {
+        alert("Some messages could not be deleted.");
       }
     } catch (error) {
-      console.error("Failed to send file message:", error);
+      console.error("Failed to delete grouped messages:", error);
+      alert(getApiErrorMessage(error, "Cannot delete these messages right now."));
     }
   };
 
@@ -1400,8 +1474,8 @@ function HomePage() {
         newMessage={newMessage}
         setNewMessage={setNewMessage}
         handleSendMessage={handleSendMessage}
-        handleSendImage={handleSendImage}
-        handleSendFile={handleSendFile}
+        handleDeleteMessage={handleDeleteMessage}
+        handleDeleteMessageGroup={handleDeleteMessageGroup}
       />
 
       <RightPanel openGroupModal={openGroupModal} />

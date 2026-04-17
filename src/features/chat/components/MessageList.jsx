@@ -86,7 +86,9 @@ function MessageList({
   onCopyMessage,
   onCopyImage,
   onDownloadImage,
-  onDownloadFile
+  onDownloadFile,
+  onDeleteMessage,
+  onDeleteMessageGroup
 }) {
   const groupedMessages = buildMessageGroups(messages, getUserId);
 
@@ -142,10 +144,13 @@ function MessageList({
                       message={actionMessage}
                       onToggle={() => onToggleMessageActions?.(latestMessage.id)}
                       onClose={onCloseMessageActions}
+                      canDelete={isMe}
                       onCopyMessage={onCopyMessage}
                       onCopyImage={onCopyImage}
                       onDownloadImage={onDownloadImage}
                       onDownloadFile={onDownloadFile}
+                      onDeleteMessage={onDeleteMessage}
+                      onDeleteMessageGroup={onDeleteMessageGroup}
                     />
 
                     <div className={`message ${isMe ? "me" : "other"} ${messageType === "image" ? "image-message" : ""}`}>
