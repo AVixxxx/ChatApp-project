@@ -18,9 +18,11 @@ const normalizeUser = (user) => normalizeUserEntity(user);
 const normalizeConversation = (conversation) => {
   if (!conversation || typeof conversation !== "object") return conversation;
 
+  const lastMessage = conversation.lastMessage || conversation.last_message;
+  const resolvedType = conversation.type || (conversation.isGroup ? "group" : "private");
   const normalizedMembers = Array.isArray(conversation.members)
     ? conversation.members.map(normalizeUser)
-    : conversation.friend_id
+    : resolvedType === "private" && conversation.friend_id
       ? [
           normalizeUser({
             id: conversation.friend_id,
@@ -31,16 +33,15 @@ const normalizeConversation = (conversation) => {
         ]
       : [];
 
-  const lastMessage = conversation.lastMessage || conversation.last_message;
-  const resolvedType = conversation.type || (conversation.isGroup ? "group" : "private");
-
   return {
     ...conversation,
     id: conversation.id || conversation.conversation_id || conversation._id,
     isGroup: Boolean(
       conversation.isGroup ?? conversation.is_group ?? resolvedType === "group"
     ),
-    groupName: conversation.groupName || conversation.group_name || "",
+    groupName:
+      conversation.groupName || conversation.group_name || conversation.name || "",
+    createdAt: conversation.createdAt || conversation.created_at || conversation.create_at,
     members: normalizedMembers,
     lastMessage:
       typeof lastMessage === "object"
@@ -90,7 +91,7 @@ export const createPrivateConversation = async (members) => {
 
   const mergeResponse = await chatApi.post(
     `${CONVERSATION_API_PATH}/merge`,
-    { receiverId },
+    { receiverIds: [receiverId] },
     {
       headers: {
         ...getAuthHeaders()
@@ -104,13 +105,18 @@ export const createPrivateConversation = async (members) => {
   });
 };
 
-export const createGroupConversation = async ({ members, groupName }) => {
+export const createGroupConversation = async ({ members, groupName, avatar = null }) => {
+  const receiverIds = Array.isArray(members)
+    ? members.map((memberId) => String(memberId || "").trim()).filter(Boolean)
+    : [];
+
   const response = await chatApi.post(
-    CONVERSATION_API_PATH,
+    `${CONVERSATION_API_PATH}/merge`,
     {
-      members,
-      groupName,
-      isGroup: true
+      receiverIds,
+      name: groupName,
+      avatar,
+      type: "group"
     },
     {
       headers: {
@@ -120,4 +126,27 @@ export const createGroupConversation = async ({ members, groupName }) => {
   );
 
   return normalizeConversation(response.data);
+};
+
+export const getConversationMembers = async (conversationId) => {
+  if (!conversationId) {
+    return [];
+  }
+
+  const response = await chatApi.get(`${CONVERSATION_API_PATH}/${conversationId}/members`, {
+    headers: {
+      ...getAuthHeaders()
+    }
+  });
+
+  const payload = Array.isArray(response.data) ? response.data : [];
+
+  return payload.map((member) => {
+    const normalizedMember = normalizeUser(member);
+
+    return {
+      ...normalizedMember,
+      role: member.role || normalizedMember.role || "member"
+    };
+  });
 };

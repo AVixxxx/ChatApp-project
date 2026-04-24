@@ -18,12 +18,16 @@ const normalizeUser = (user) => normalizeUserEntity(user);
 const normalizeMessage = (message) => {
   if (!message || typeof message !== "object") return message;
 
+  const isRecalled = Boolean(message.isRecalled ?? message.is_recalled);
+
   const text =
-    message.text ||
-    message.content ||
-    message.message ||
-    message.last_message ||
-    "";
+    isRecalled
+      ? "[Tin nhắn đã được thu hồi]"
+      : message.text ||
+        message.content ||
+        message.message ||
+        message.last_message ||
+        "";
 
   const hasFileUrl = Boolean(message.file_url || message.fileUrl);
   const messageType =
@@ -51,6 +55,8 @@ const normalizeMessage = (message) => {
     imageUrl,
     fileUrl: imageUrl,
     file_url: imageUrl,
+    isRecalled,
+    is_recalled: isRecalled,
     sender:
       typeof message.sender === "object"
         ? normalizeUser(message.sender)
@@ -229,6 +235,16 @@ export const sendFileMessage = async ({ conversationId, files = [] }) => {
 export const deleteMessage = async (messageId) => {
   const response = await chatApi.post(
     `${MESSAGE_API_PATH}/delete`,
+    { message_id: messageId },
+    getApiHeaders()
+  );
+
+  return response.data;
+};
+
+export const recallMessage = async (messageId) => {
+  const response = await chatApi.post(
+    `${MESSAGE_API_PATH}/recall`,
     { message_id: messageId },
     getApiHeaders()
   );

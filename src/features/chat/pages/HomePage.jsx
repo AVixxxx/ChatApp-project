@@ -4,12 +4,14 @@ import "./HomePage.css";
 import socket, { connectSocketWithToken } from "@/socket";
 import {
   getConversations,
+  getConversationMembers,
   createGroupConversation,
   createPrivateConversation
 } from "@/features/chat/services/conversationService";
 import {
   getMessagesPage,
   sendMessage,
+  recallMessage as recallMessageApi,
   deleteMessage as deleteMessageApi,
   normalizeMessage
 } from "@/features/chat/services/messageService";
@@ -194,6 +196,7 @@ function HomePage() {
   const [allUsers, setAllUsers] = useState([]);
   const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
   const [groupName, setGroupName] = useState("");
+  const [groupModalError, setGroupModalError] = useState("");
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
   const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
@@ -322,6 +325,33 @@ function HomePage() {
       ) || conversation.members?.[0];
 
     return getAvatarUrl(otherMember, getAvatarUrl(user));
+  };
+
+  const hydrateGroupConversationMembers = async (conversationId) => {
+    if (!conversationId) return;
+
+    try {
+      const members = await getConversationMembers(conversationId);
+
+      setConversations((prev) =>
+        prev.map((conversation) => {
+          if (conversation.id !== conversationId || !conversation.isGroup) {
+            return conversation;
+          }
+
+          const groupAdmin =
+            members.find((member) => String(member.role || "").toLowerCase() === "admin") || null;
+
+          return {
+            ...conversation,
+            members,
+            groupAdmin
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Failed to load group members:", error);
+    }
   };
 
   const mergeConversationsWithFriends = (conversationList, friendList) => {
@@ -562,6 +592,60 @@ function HomePage() {
     );
   };
 
+  const markMessagesAsRecalled = (messageIds) => {
+    const idSet = new Set(
+      (Array.isArray(messageIds) ? messageIds : [messageIds])
+        .map((value) => getSafeId(value))
+        .filter(Boolean)
+    );
+
+    if (idSet.size === 0) return;
+
+    setMessages((prev) =>
+      prev.map((message) => {
+        const messageId = getSafeId(getEntityId(message));
+        if (!idSet.has(messageId)) {
+          return message;
+        }
+
+        return normalizeMessage({
+          ...message,
+          text: "[Tin nhắn đã được thu hồi]",
+          content: "[Tin nhắn đã được thu hồi]",
+          is_recalled: true,
+          file_url: "",
+          fileUrl: "",
+          imageUrl: ""
+        });
+      })
+    );
+
+    setConversations((prev) =>
+      prev.map((conversation) => {
+        const lastMessage = conversation?.lastMessage;
+        const lastMessageId = getSafeId(getEntityId(lastMessage || {}));
+
+        if (!idSet.has(lastMessageId)) {
+          return conversation;
+        }
+
+        return {
+          ...conversation,
+          lastMessage: normalizeMessage({
+            ...(lastMessage || {}),
+            id: lastMessageId,
+            text: "[Tin nhắn đã được thu hồi]",
+            content: "[Tin nhắn đã được thu hồi]",
+            is_recalled: true,
+            file_url: "",
+            fileUrl: "",
+            imageUrl: ""
+          })
+        };
+      })
+    );
+  };
+
   const getApiErrorMessage = (error, fallbackMessage) => {
     const responseData = error?.response?.data;
 
@@ -731,9 +815,13 @@ function HomePage() {
     try {
       const friends = await getFriends();
       setAllUsers(friends);
+      setGroupModalError("");
       setIsGroupModalOpen(true);
     } catch (error) {
       console.error("Failed to load friends:", error);
+      setGroupModalError("Failed to load friends list.");
+      setAllUsers([]);
+      setIsGroupModalOpen(true);
     }
   };
 
@@ -741,9 +829,11 @@ function HomePage() {
     setIsGroupModalOpen(false);
     setSelectedGroupMembers([]);
     setGroupName("");
+    setGroupModalError("");
   };
 
   const toggleGroupMember = (userId) => {
+    setGroupModalError("");
     setSelectedGroupMembers((prev) =>
       prev.includes(userId)
         ? prev.filter((id) => id !== userId)
@@ -753,17 +843,18 @@ function HomePage() {
 
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
-      alert("Please enter a group name.");
+      setGroupModalError("Please enter a group name.");
       return;
     }
 
     if (selectedGroupMembers.length < 2) {
-      alert("Please select at least 2 friends to create a group.");
+      setGroupModalError("Please select at least 2 friends to create a group.");
       return;
     }
 
     try {
       setIsCreatingGroup(true);
+      setGroupModalError("");
 
       const newGroup = await createGroupConversation({
         groupName: groupName.trim(),
@@ -776,8 +867,8 @@ function HomePage() {
       closeGroupModal();
     } catch (error) {
       console.error("Failed to create group:", error);
-      alert(
-        error?.response?.data?.message || "Failed to create group conversation."
+      setGroupModalError(
+        getApiErrorMessage(error, "Failed to create group conversation.")
       );
     } finally {
       setIsCreatingGroup(false);
@@ -894,6 +985,18 @@ function HomePage() {
   }, [conversations, selectedConversationId]);
 
   useEffect(() => {
+    const selected = conversations.find(
+      (conversation) => conversation.id === selectedConversationId
+    );
+
+    if (!selected?.isGroup || !selected?.id || (selected.members?.length ?? 0) > 0) {
+      return;
+    }
+
+    hydrateGroupConversationMembers(selected.id);
+  }, [conversations, selectedConversationId]);
+
+  useEffect(() => {
     setMessages([]);
     setMessagePageCursor(null);
     setHasMoreMessages(true);
@@ -995,16 +1098,27 @@ function HomePage() {
       removeMessagesByIds([deletedMessageId]);
     };
 
+    const handleMessageRecalled = (payload) => {
+      const recalledMessageId =
+        payload?.messageId || payload?.message_id || payload?.id;
+
+      if (!recalledMessageId) return;
+
+      markMessagesAsRecalled([recalledMessageId]);
+    };
+
     socketClient.on("receive_message", handleReceiveMessage);
     socketClient.on("new_message", handleReceiveMessage);
     socketClient.on("new_messages_batch", handleReceiveMessageBatch);
     socketClient.on("delete message", handleDeleteMessage);
+    socketClient.on("message_recalled", handleMessageRecalled);
 
     return () => {
       socketClient.off("receive_message", handleReceiveMessage);
       socketClient.off("new_message", handleReceiveMessage);
       socketClient.off("new_messages_batch", handleReceiveMessageBatch);
       socketClient.off("delete message", handleDeleteMessage);
+      socketClient.off("message_recalled", handleMessageRecalled);
     };
   }, [currentConversation, selectedConversationId, socketClient, user?.id]);
 
@@ -1105,11 +1219,65 @@ function HomePage() {
     }
   };
 
+  const handleRecallMessage = async (message) => {
+    const messageId = getEntityId(message);
+    if (!messageId) return;
+
+    const isConfirmed = window.confirm("Thu hồi tin nhắn này?");
+    if (!isConfirmed) return;
+
+    try {
+      await recallMessageApi(messageId);
+      markMessagesAsRecalled([messageId]);
+    } catch (error) {
+      console.error("Failed to recall message:", error);
+      alert(getApiErrorMessage(error, "Không thể thu hồi tin nhắn lúc này."));
+    }
+  };
+
+  const handleRecallMessageGroup = async (message) => {
+    const groupedItems = Array.isArray(message?.groupedItems)
+      ? message.groupedItems
+      : [];
+    const targets = groupedItems.length > 0 ? groupedItems : [message];
+    const targetIds = targets
+      .map((item) => getEntityId(item))
+      .filter(Boolean);
+
+    if (targetIds.length === 0) return;
+
+    const isConfirmed = window.confirm(
+      `Thu hồi ${targetIds.length} tin nhắn này?`
+    );
+    if (!isConfirmed) return;
+
+    try {
+      const results = await Promise.allSettled(
+        targetIds.map((id) => recallMessageApi(id))
+      );
+
+      const succeededIds = targetIds.filter(
+        (_, index) => results[index]?.status === "fulfilled"
+      );
+
+      if (succeededIds.length > 0) {
+        markMessagesAsRecalled(succeededIds);
+      }
+
+      if (succeededIds.length !== targetIds.length) {
+        alert("Một số tin nhắn chưa thu hồi được.");
+      }
+    } catch (error) {
+      console.error("Failed to recall grouped messages:", error);
+      alert(getApiErrorMessage(error, "Không thể thu hồi các tin nhắn này."));
+    }
+  };
+
   const handleDeleteMessage = async (message) => {
     const messageId = getEntityId(message);
     if (!messageId) return;
 
-    const isConfirmed = window.confirm("Delete this message?");
+    const isConfirmed = window.confirm("Xóa tin nhắn này khỏi phía bạn?");
     if (!isConfirmed) return;
 
     try {
@@ -1117,7 +1285,7 @@ function HomePage() {
       removeMessagesByIds([messageId]);
     } catch (error) {
       console.error("Failed to delete message:", error);
-      alert(getApiErrorMessage(error, "Cannot delete this message right now."));
+      alert(getApiErrorMessage(error, "Không thể xóa tin nhắn này lúc này."));
     }
   };
 
@@ -1133,7 +1301,7 @@ function HomePage() {
     if (targetIds.length === 0) return;
 
     const isConfirmed = window.confirm(
-      `Delete all ${targetIds.length} messages in this group?`
+      `Xóa ${targetIds.length} tin nhắn này khỏi phía bạn?`
     );
     if (!isConfirmed) return;
 
@@ -1151,11 +1319,11 @@ function HomePage() {
       }
 
       if (succeededIds.length !== targetIds.length) {
-        alert("Some messages could not be deleted.");
+        alert("Một số tin nhắn chưa xóa được.");
       }
     } catch (error) {
       console.error("Failed to delete grouped messages:", error);
-      alert(getApiErrorMessage(error, "Cannot delete these messages right now."));
+      alert(getApiErrorMessage(error, "Không thể xóa các tin nhắn này lúc này."));
     }
   };
 
@@ -1222,6 +1390,32 @@ function HomePage() {
     }
 
     return MESSAGE_SENDER_AVATAR_URL;
+  };
+
+  const getMessageSenderName = (message) => {
+    const directSender = message?.sender;
+    if (directSender && typeof directSender === "object") {
+      return getUserDisplayName(directSender);
+    }
+
+    const senderId = getSafeId(message?.sender_id || getUserId(directSender));
+    if (!senderId) {
+      return "Unknown";
+    }
+
+    if (getSafeId(user?.id) === senderId) {
+      return user?.name || "You";
+    }
+
+    const members = Array.isArray(currentConversation?.members)
+      ? currentConversation.members
+      : [];
+
+    const matchedMember = members.find(
+      (member) => getSafeId(getUserId(member)) === senderId
+    );
+
+    return matchedMember ? getUserDisplayName(matchedMember) : "Unknown";
   };
 
   const getGroupInfoMemberAvatar = (member) =>
@@ -1464,6 +1658,7 @@ function HomePage() {
         user={user}
         getUserId={getUserId}
         getMessageSenderAvatar={getMessageSenderAvatar}
+        getMessageSenderName={getMessageSenderName}
         formatTime={formatTime}
         messagesEndRef={messagesEndRef}
         messagesContainerRef={messagesContainerRef}
@@ -1474,6 +1669,8 @@ function HomePage() {
         newMessage={newMessage}
         setNewMessage={setNewMessage}
         handleSendMessage={handleSendMessage}
+        handleRecallMessage={handleRecallMessage}
+        handleRecallMessageGroup={handleRecallMessageGroup}
         handleDeleteMessage={handleDeleteMessage}
         handleDeleteMessageGroup={handleDeleteMessageGroup}
       />
@@ -1501,6 +1698,7 @@ function HomePage() {
         getGroupMemberAvatar={getGroupPickerMemberAvatar}
         handleCreateGroup={handleCreateGroup}
         isCreatingGroup={isCreatingGroup}
+        errorMessage={groupModalError}
       />
 
       <AddFriendModal

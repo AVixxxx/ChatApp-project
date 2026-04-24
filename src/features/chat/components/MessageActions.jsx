@@ -6,11 +6,14 @@ function MessageActions({
   message,
   onToggle,
   onClose,
-  canDelete,
+  canRecall,
+  canDeleteForMe,
   onCopyMessage,
   onCopyImage,
   onDownloadImage,
   onDownloadFile,
+  onRecallMessage,
+  onRecallMessageGroup,
   onDeleteMessage,
   onDeleteMessageGroup
 }) {
@@ -35,6 +38,7 @@ function MessageActions({
   const messageType = message?.type || message?.messageType || message?.message_type || (message?.fileUrl || message?.file_url ? "file" : "text");
   const groupedItems = Array.isArray(message?.groupedItems) ? message.groupedItems : [];
   const hasGroupedItems = groupedItems.length > 1;
+  const isRecalled = Boolean(message?.isRecalled ?? message?.is_recalled);
 
   return (
     <div className="message-actions-wrap" ref={menuRef}>
@@ -52,7 +56,20 @@ function MessageActions({
 
       {isOpen && (
         <div className="message-actions-menu" onClick={(event) => event.stopPropagation()}>
-          {messageType === "image" ? (
+          {isRecalled ? (
+            canDeleteForMe ? (
+              <button
+                type="button"
+                className="message-action-item"
+                onClick={() => {
+                  onDeleteMessage?.(message);
+                  onClose?.();
+                }}
+              >
+                Xóa với tôi
+              </button>
+            ) : null
+          ) : messageType === "image" ? (
             <>
               <button
                 type="button"
@@ -62,7 +79,7 @@ function MessageActions({
                   onClose?.();
                 }}
               >
-                Copy image
+                Sao chép ảnh
               </button>
               <button
                 type="button"
@@ -72,9 +89,35 @@ function MessageActions({
                   onClose?.();
                 }}
               >
-                Download image
+                Tải ảnh xuống
               </button>
-              {canDelete && (
+              {canRecall && (
+                <>
+                  <button
+                    type="button"
+                    className="message-action-item"
+                    onClick={() => {
+                      onRecallMessage?.(message);
+                      onClose?.();
+                    }}
+                  >
+                    Thu hồi ảnh
+                  </button>
+                  {hasGroupedItems && (
+                    <button
+                      type="button"
+                      className="message-action-item"
+                      onClick={() => {
+                        onRecallMessageGroup?.(message);
+                        onClose?.();
+                      }}
+                    >
+                      Thu hồi tất cả ảnh
+                    </button>
+                  )}
+                </>
+              )}
+              {canDeleteForMe && (
                 <>
                   <button
                     type="button"
@@ -84,7 +127,7 @@ function MessageActions({
                       onClose?.();
                     }}
                   >
-                    Delete image
+                    Xóa ảnh với tôi
                   </button>
                   {hasGroupedItems && (
                     <button
@@ -95,7 +138,7 @@ function MessageActions({
                         onClose?.();
                       }}
                     >
-                      Delete all in group
+                      Xóa tất cả ảnh với tôi
                     </button>
                   )}
                 </>
@@ -111,9 +154,35 @@ function MessageActions({
                   onClose?.();
                 }}
               >
-                Download file
+                Tải tệp xuống
               </button>
-              {canDelete && (
+              {canRecall && (
+                <>
+                  <button
+                    type="button"
+                    className="message-action-item"
+                    onClick={() => {
+                      onRecallMessage?.(message);
+                      onClose?.();
+                    }}
+                  >
+                    Thu hồi tệp
+                  </button>
+                  {hasGroupedItems && (
+                    <button
+                      type="button"
+                      className="message-action-item"
+                      onClick={() => {
+                        onRecallMessageGroup?.(message);
+                        onClose?.();
+                      }}
+                    >
+                      Thu hồi tất cả tệp
+                    </button>
+                  )}
+                </>
+              )}
+              {canDeleteForMe && (
                 <>
                   <button
                     type="button"
@@ -123,7 +192,7 @@ function MessageActions({
                       onClose?.();
                     }}
                   >
-                    Delete file
+                    Xóa tệp với tôi
                   </button>
                   {hasGroupedItems && (
                     <button
@@ -134,7 +203,7 @@ function MessageActions({
                         onClose?.();
                       }}
                     >
-                      Delete all in group
+                      Xóa tất cả tệp với tôi
                     </button>
                   )}
                 </>
@@ -150,9 +219,21 @@ function MessageActions({
                   onClose?.();
                 }}
               >
-                Copy message
+                Sao chép tin nhắn
               </button>
-              {canDelete && (
+              {canRecall && (
+                <button
+                  type="button"
+                  className="message-action-item"
+                  onClick={() => {
+                    onRecallMessage?.(message);
+                    onClose?.();
+                  }}
+                >
+                  Thu hồi tin nhắn
+                </button>
+              )}
+              {canDeleteForMe && (
                 <button
                   type="button"
                   className="message-action-item"
@@ -161,7 +242,7 @@ function MessageActions({
                     onClose?.();
                   }}
                 >
-                  Delete message
+                  Xóa với tôi
                 </button>
               )}
             </>

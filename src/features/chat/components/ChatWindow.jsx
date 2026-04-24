@@ -17,6 +17,7 @@ function ChatWindow({
   user,
   getUserId,
   getMessageSenderAvatar,
+  getMessageSenderName,
   formatTime,
   messagesEndRef,
   messagesContainerRef,
@@ -27,6 +28,8 @@ function ChatWindow({
   newMessage,
   setNewMessage,
   handleSendMessage,
+  handleRecallMessage,
+  handleRecallMessageGroup,
   handleDeleteMessage,
   handleDeleteMessageGroup
 }) {
@@ -192,6 +195,8 @@ function ChatWindow({
         userId={user?.id}
         getUserId={getUserId}
         getMessageSenderAvatar={getMessageSenderAvatar}
+        getMessageSenderName={getMessageSenderName}
+        isGroupConversation={Boolean(selectedConversation?.isGroup)}
         formatTime={formatTime}
         messagesEndRef={messagesEndRef}
         messagesContainerRef={messagesContainerRef}
@@ -207,6 +212,8 @@ function ChatWindow({
         onCopyImage={copyImageMessage}
         onDownloadImage={downloadAttachmentMessage}
         onDownloadFile={downloadAttachmentMessage}
+        onRecallMessage={handleRecallMessage}
+        onRecallMessageGroup={handleRecallMessageGroup}
         onDeleteMessage={handleDeleteMessage}
         onDeleteMessageGroup={handleDeleteMessageGroup}
       />

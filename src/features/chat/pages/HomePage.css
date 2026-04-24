@@ -114,6 +114,7 @@
 .search-box {
   margin: 0;
   flex: 1;
+  min-width: 0;
   background: #f0d8cf;
   border-radius: 10px;
   display: flex;
@@ -139,6 +140,7 @@
 .search-action-btn {
   width: 36px;
   height: 36px;
+  flex-shrink: 0;
   border: none;
   border-radius: 999px;
   background: #ffffff;
@@ -489,6 +491,24 @@
   margin-top: 8px;
 }
 
+.message-sender-column {
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.message-sender-name {
+  margin-top: 6px;
+  max-width: 56px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #667085;
+  text-align: center;
+  word-break: break-word;
+}
+
 .message-block {
   max-width: 380px;
 }
@@ -516,6 +536,11 @@
 
 .message p {
   margin: 0;
+}
+
+.message-recalled {
+  font-style: italic;
+  opacity: 0.75;
 }
 
 .image-message {
@@ -1139,6 +1164,22 @@
   padding: 8px;
 }
 
+.group-helper-text,
+.group-selection-count,
+.group-error-text {
+  margin: 0;
+  font-size: 13px;
+}
+
+.group-helper-text,
+.group-selection-count {
+  color: #6f6f6f;
+}
+
+.group-error-text {
+  color: #d14343;
+}
+
 .group-member-item {
   display: flex;
   align-items: center;
@@ -1198,6 +1239,11 @@
 .group-create-btn {
   background: #4f7cff;
   color: white;
+}
+
+.group-create-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .group-create-btn:disabled {

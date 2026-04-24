@@ -72,6 +72,8 @@ function MessageList({
   userId,
   getUserId,
   getMessageSenderAvatar,
+  getMessageSenderName,
+  isGroupConversation,
   formatTime,
   messagesEndRef,
   messagesContainerRef,
@@ -87,6 +89,8 @@ function MessageList({
   onCopyImage,
   onDownloadImage,
   onDownloadFile,
+  onRecallMessage,
+  onRecallMessageGroup,
   onDeleteMessage,
   onDeleteMessageGroup
 }) {
@@ -111,6 +115,9 @@ function MessageList({
             const isMe = group.senderId === String(userId || "");
             const messageType = group.type;
             const hasMultipleItems = group.items.length > 1;
+            const isRecalled = Boolean(
+              latestMessage?.isRecalled ?? latestMessage?.is_recalled
+            );
             const actionMessage =
               hasMultipleItems && isAttachmentMessageType(messageType)
                 ? {
@@ -130,11 +137,18 @@ function MessageList({
             return (
               <div key={group.id} className={`message-row ${isMe ? "me-row" : "other-row"}`}>
                 {!isMe && (
-                  <img
-                    src={getMessageSenderAvatar(latestMessage)}
-                    alt="sender"
-                    className="message-avatar"
-                  />
+                  <div className="message-sender-column">
+                    <img
+                      src={getMessageSenderAvatar(latestMessage)}
+                      alt="sender"
+                      className="message-avatar"
+                    />
+                    {isGroupConversation ? (
+                      <span className="message-sender-name">
+                        {getMessageSenderName?.(latestMessage) || "Unknown"}
+                      </span>
+                    ) : null}
+                  </div>
                 )}
 
                 <div className={`message-block ${isMe ? "me-block" : ""}`}>
@@ -144,17 +158,22 @@ function MessageList({
                       message={actionMessage}
                       onToggle={() => onToggleMessageActions?.(latestMessage.id)}
                       onClose={onCloseMessageActions}
-                      canDelete={isMe}
+                      canRecall={isMe}
+                      canDeleteForMe
                       onCopyMessage={onCopyMessage}
                       onCopyImage={onCopyImage}
                       onDownloadImage={onDownloadImage}
                       onDownloadFile={onDownloadFile}
+                      onRecallMessage={onRecallMessage}
+                      onRecallMessageGroup={onRecallMessageGroup}
                       onDeleteMessage={onDeleteMessage}
                       onDeleteMessageGroup={onDeleteMessageGroup}
                     />
 
-                    <div className={`message ${isMe ? "me" : "other"} ${messageType === "image" ? "image-message" : ""}`}>
-                      {messageType === "image" ? (
+                    <div className={`message ${isMe ? "me" : "other"} ${messageType === "image" ? "image-message" : ""} ${isRecalled ? "message-recalled" : ""}`}>
+                      {isRecalled ? (
+                        <p>{latestMessage.text || "[Tin nhắn đã được thu hồi]"}</p>
+                      ) : messageType === "image" ? (
                         <div className={`message-image-grid count-${Math.min(attachmentItems.length, 4)}`}>
                           {attachmentItems.map(({ message, attachmentUrl }, index) => (
                             <button

@@ -10,9 +10,14 @@ function GroupModal({
   toggleGroupMember,
   getGroupMemberAvatar,
   handleCreateGroup,
-  isCreatingGroup
+  isCreatingGroup,
+  errorMessage
 }) {
   if (!isOpen) return null;
+
+  const selectedCount = Array.isArray(selectedGroupMembers)
+    ? selectedGroupMembers.length
+    : 0;
 
   return (
     <div className="group-modal-overlay">
@@ -32,6 +37,16 @@ function GroupModal({
             value={groupName}
             onChange={(e) => setGroupName(e.target.value)}
           />
+
+          <p className="group-helper-text">
+            Select at least 2 friends. You will be added automatically.
+          </p>
+
+          {errorMessage ? <p className="group-error-text">{errorMessage}</p> : null}
+
+          <p className="group-selection-count">
+            Selected friends: {selectedCount}
+          </p>
 
           <div className="group-member-list">
             {allUsers.length === 0 ? (
@@ -66,7 +81,7 @@ function GroupModal({
           <button
             className="group-create-btn"
             onClick={handleCreateGroup}
-            disabled={isCreatingGroup}
+            disabled={isCreatingGroup || selectedCount < 2 || !groupName.trim()}
           >
             {isCreatingGroup ? "Creating..." : "Create Group"}
           </button>
