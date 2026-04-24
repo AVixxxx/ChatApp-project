@@ -183,6 +183,32 @@ export const leaveGroupConversation = async (conversationId, currentUserId) => {
   return response.data;
 };
 
+export const setGroupAdmin = async (conversationId, targetUserId) => {
+  const response = await chatApi.put(
+    `${CONVERSATION_API_PATH}/group/set-admin`,
+    {
+      conversation_id: conversationId,
+      targetUserId
+    },
+    {
+      headers: { ...getAuthHeaders() }
+    }
+  );
+
+  return response.data;
+};
+
+export const deleteGroupConversation = async (conversationId) => {
+  const response = await chatApi.delete(
+    `${CONVERSATION_API_PATH}/${conversationId}/delete-group`,
+    {
+      headers: { ...getAuthHeaders() }
+    }
+  );
+
+  return response.data;
+};
+
 export const updateGroupInfo = async (conversationId, { name, avatarFile } = {}) => {
   const formData = new FormData();
   formData.append("conversation_id", conversationId);

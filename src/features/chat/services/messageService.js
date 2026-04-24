@@ -7,6 +7,8 @@ const chatApi = axios.create({
 });
 
 const MESSAGE_API_PATH = "/api/messages";
+const MESSAGE_API_FALLBACK_PATH = "/api/message";
+const RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504]);
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");
@@ -71,6 +73,76 @@ const getApiHeaders = () => ({
   }
 });
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const shouldRetryUploadRequest = (error) => {
+  const status = error?.response?.status;
+  return error?.code === "ERR_NETWORK" || RETRYABLE_STATUSES.has(status);
+};
+
+const createMessageUploadFormData = (messageData) => {
+  const formData = new FormData();
+  formData.append("conversation_id", messageData?.conversationId || "");
+  formData.append("content", messageData?.text || messageData?.content || "");
+  formData.append("message_type", messageData?.messageType || "file");
+
+  (Array.isArray(messageData?.files) ? messageData.files : []).forEach((file) => {
+    formData.append("files", file);
+  });
+
+  return formData;
+};
+
+const uploadMultipartMessage = async (messageData, maxAttemptsPerPath = 2) => {
+  const candidatePaths = [MESSAGE_API_PATH, MESSAGE_API_FALLBACK_PATH];
+  let lastError;
+
+  for (const apiPath of candidatePaths) {
+    for (let attempt = 1; attempt <= maxAttemptsPerPath; attempt += 1) {
+      try {
+        return await chatApi.post(
+          `${apiPath}/send`,
+          createMessageUploadFormData(messageData),
+          {
+            headers: {
+              ...getAuthHeaders(),
+              "Content-Type": "multipart/form-data"
+            },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+            timeout: 60000
+          }
+        );
+      } catch (error) {
+        lastError = error;
+
+        const status = error?.response?.status;
+        const shouldTryNextPath = status === 404 || status === 405;
+
+        if (shouldTryNextPath) {
+          break;
+        }
+
+        if (!shouldRetryUploadRequest(error) || attempt === maxAttemptsPerPath) {
+          break;
+        }
+
+        await sleep(500 * attempt);
+      }
+    }
+  }
+
+  if (axios.isAxiosError(lastError) && !lastError.response) {
+    const wrappedError = new Error(
+      "Không thể tải file hoặc ảnh lên máy chủ. Kết nối đã bị ngắt trong lúc upload."
+    );
+    wrappedError.cause = lastError;
+    throw wrappedError;
+  }
+
+  throw lastError;
+};
+
 const toTimestamp = (message) => {
   const value = message?.createdAt || message?.created_at || message?.create_at;
   const parsed = new Date(value).getTime();
@@ -80,6 +152,18 @@ const toTimestamp = (message) => {
 const sortMessagesOldestFirst = (messages) =>
   [...messages].sort((a, b) => toTimestamp(a) - toTimestamp(b));
 
+const toBackendCursor = (cursor) => {
+  if (!cursor) return null;
+
+  const parsed = new Date(cursor);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  // Backend compares against TIMESTAMP (without timezone), so send a neutral format.
+  return parsed.toISOString().replace("T", " ").replace("Z", "");
+};
+
 export const getMessagesByConversation = async (conversationId) => {
   const page = await getMessagesPage(conversationId);
   return page.messages;
@@ -87,14 +171,36 @@ export const getMessagesByConversation = async (conversationId) => {
 
 export const getMessagesPage = async (conversationId, options = {}) => {
   const { cursor = null, limit = 20 } = options;
+  const normalizedCursor = toBackendCursor(cursor);
 
-  const response = await chatApi.get(`${MESSAGE_API_PATH}/${conversationId}`, {
-    ...getApiHeaders(),
-    params: {
-      limit,
-      ...(cursor ? { cursor } : {})
+  let response;
+
+  try {
+    response = await chatApi.get(`${MESSAGE_API_PATH}/${conversationId}`, {
+      ...getApiHeaders(),
+      params: {
+        limit,
+        ...(normalizedCursor ? { cursor: normalizedCursor } : {})
+      }
+    });
+  } catch (error) {
+    const shouldRetryWithRawCursor =
+      Boolean(cursor) &&
+      Boolean(normalizedCursor) &&
+      error?.response?.status === 500;
+
+    if (!shouldRetryWithRawCursor) {
+      throw error;
     }
-  });
+
+    response = await chatApi.get(`${MESSAGE_API_PATH}/${conversationId}`, {
+      ...getApiHeaders(),
+      params: {
+        limit,
+        cursor
+      }
+    });
+  }
 
   const payload = Array.isArray(response.data)
     ? response.data
@@ -133,19 +239,9 @@ export const sendMessage = async (messageData) => {
   let response;
 
   if (hasFiles) {
-    const formData = new FormData();
-    formData.append("conversation_id", messageData?.conversationId || "");
-    formData.append("content", messageData?.text || messageData?.content || "");
-    formData.append("message_type", messageType);
-
-    messageData.files.forEach((file) => {
-      formData.append("files", file);
-    });
-
-    response = await chatApi.post(`${MESSAGE_API_PATH}/send`, formData, {
-      headers: {
-        ...getAuthHeaders()
-      }
+    response = await uploadMultipartMessage({
+      ...messageData,
+      messageType
     });
   } else {
     const payload = {

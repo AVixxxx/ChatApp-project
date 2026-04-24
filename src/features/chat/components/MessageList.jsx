@@ -1,4 +1,4 @@
-import { FaDownload, FaFileAlt, FaHeart } from "react-icons/fa";
+import { FaDownload, FaFileAlt, FaFilePdf, FaFileWord, FaHeart } from "react-icons/fa";
 import MessageActions from "./MessageActions";
 
 const getMessageType = (message) =>
@@ -38,6 +38,52 @@ const getMessageFileName = (message, attachmentUrl) => {
   }
 
   return "Attachment";
+};
+
+const getFileExtension = (fileName) => {
+  const safeName = String(fileName || "").trim().toLowerCase();
+  if (!safeName || !safeName.includes(".")) return "";
+  return safeName.split(".").pop() || "";
+};
+
+const getFileIconByName = (fileName) => {
+  const extension = getFileExtension(fileName);
+
+  if (extension === "pdf") {
+    return FaFilePdf;
+  }
+
+  if (extension === "docx" || extension === "doc") {
+    return FaFileWord;
+  }
+
+  return FaFileAlt;
+};
+
+const getFilePresentation = (fileName) => {
+  const extension = getFileExtension(fileName);
+
+  if (extension === "pdf") {
+    return {
+      Icon: FaFilePdf,
+      iconClassName: "message-file-icon message-file-icon--pdf",
+      typeLabel: "PDF"
+    };
+  }
+
+  if (extension === "docx" || extension === "doc") {
+    return {
+      Icon: FaFileWord,
+      iconClassName: "message-file-icon message-file-icon--word",
+      typeLabel: extension.toUpperCase()
+    };
+  }
+
+  return {
+    Icon: getFileIconByName(fileName),
+    iconClassName: "message-file-icon",
+    typeLabel: extension ? extension.toUpperCase() : "FILE"
+  };
 };
 
 const buildMessageGroups = (messages, getUserId) => {
@@ -218,26 +264,37 @@ function MessageList({
                         </div>
                       ) : messageType === "file" ? (
                         <div className="message-file-list">
-                          {attachmentItems.map(({ message, fileName }, index) => (
-                            <button
-                              key={message.id || `${group.id}-file-${index}`}
-                              type="button"
-                              className="message-file-button"
-                              onClick={() => onDownloadFile?.(message)}
-                              aria-label={`Download ${fileName}`}
-                            >
-                              <span className="message-file-icon" aria-hidden="true">
-                                <FaFileAlt />
-                              </span>
-                              <span className="message-file-content">
-                                <span className="message-file-name">{fileName}</span>
-                                <span className="message-file-cta">
-                                  <FaDownload />
-                                  Download
+                          {attachmentItems.map(({ message, fileName }, index) => {
+                            const {
+                              Icon: FileIcon,
+                              iconClassName,
+                              typeLabel
+                            } = getFilePresentation(fileName);
+
+                            return (
+                              <button
+                                key={message.id || `${group.id}-file-${index}`}
+                                type="button"
+                                className="message-file-button"
+                                onClick={() => onDownloadFile?.(message)}
+                                aria-label={`Download ${fileName}`}
+                              >
+                                <span className={iconClassName} aria-hidden="true">
+                                  <FileIcon />
                                 </span>
-                              </span>
-                            </button>
-                          ))}
+                                <span className="message-file-content">
+                                  <span className="message-file-topline">
+                                    <span className="message-file-name">{fileName}</span>
+                                    <span className="message-file-type">{typeLabel}</span>
+                                  </span>
+                                  <span className="message-file-cta">
+                                    <FaDownload />
+                                    Download
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                       ) : (
                         <p>{latestMessage.text}</p>

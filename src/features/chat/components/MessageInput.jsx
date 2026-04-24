@@ -1,6 +1,35 @@
 import { useEffect, useRef, useState } from "react";
-import { FaImage, FaMicrophone, FaPaperclip, FaPaperPlane, FaSmile } from "react-icons/fa";
+import {
+  FaFileAlt,
+  FaFilePdf,
+  FaFileWord,
+  FaImage,
+  FaMicrophone,
+  FaPaperclip,
+  FaPaperPlane,
+  FaSmile
+} from "react-icons/fa";
 import EmojiPicker from "./EmojiPicker";
+
+const getFileExtension = (fileName) => {
+  const safeName = String(fileName || "").trim().toLowerCase();
+  if (!safeName || !safeName.includes(".")) return "";
+  return safeName.split(".").pop() || "";
+};
+
+const getFileIconByName = (fileName) => {
+  const extension = getFileExtension(fileName);
+
+  if (extension === "pdf") {
+    return FaFilePdf;
+  }
+
+  if (extension === "docx" || extension === "doc") {
+    return FaFileWord;
+  }
+
+  return FaFileAlt;
+};
 
 function MessageInput({ newMessage, onChangeNewMessage, onSendMessage }) {
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
@@ -147,31 +176,35 @@ function MessageInput({ newMessage, onChangeNewMessage, onSendMessage }) {
 
       {draftAttachments.length > 0 && (
         <div className="chat-input-preview-row" aria-label="File previews">
-          {draftAttachments.map((attachment) => (
-            <div key={attachment.id} className="chat-input-preview-item">
-              {attachment.kind === "image" ? (
-                <img
-                  src={attachment.previewUrl}
-                  alt={attachment.name}
-                  className="chat-input-preview-image"
-                />
-              ) : (
-                <div className="chat-input-preview-file">
-                  <FaPaperclip className="chat-input-preview-file-icon" />
-                  <span>{attachment.name}</span>
-                </div>
-              )}
+          {draftAttachments.map((attachment) => {
+            const FileIcon = getFileIconByName(attachment.name);
 
-              <button
-                type="button"
-                className="chat-input-preview-remove"
-                onClick={() => removeDraftAttachment(attachment.id)}
-                aria-label={`Remove ${attachment.name}`}
-              >
-                ×
-              </button>
-            </div>
-          ))}
+            return (
+              <div key={attachment.id} className="chat-input-preview-item">
+                {attachment.kind === "image" ? (
+                  <img
+                    src={attachment.previewUrl}
+                    alt={attachment.name}
+                    className="chat-input-preview-image"
+                  />
+                ) : (
+                  <div className="chat-input-preview-file">
+                    <FileIcon className="chat-input-preview-file-icon" />
+                    <span>{attachment.name}</span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="chat-input-preview-remove"
+                  onClick={() => removeDraftAttachment(attachment.id)}
+                  aria-label={`Remove ${attachment.name}`}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 

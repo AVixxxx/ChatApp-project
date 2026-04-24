@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { FaTimes, FaEdit, FaUserPlus, FaTrash, FaCheck } from "react-icons/fa";
+import { FaTimes, FaEdit, FaUserPlus, FaTrash, FaCheck, FaUserShield } from "react-icons/fa";
 
 function GroupInfoModal({
   show,
@@ -14,10 +14,14 @@ function GroupInfoModal({
   onUpdateGroupInfo,
   onAddMembers,
   onRemoveMember,
+  onTransferAdmin,
   onLeaveGroup,
+  onDissolveGroup,
   isUpdatingGroup,
   isAddingMembers,
-  isLeavingGroup
+  isLeavingGroup,
+  isTransferringAdmin,
+  isDissolvingGroup
 }) {
   const [editMode, setEditMode] = useState(false);
   const [editName, setEditName] = useState("");
@@ -49,9 +53,10 @@ function GroupInfoModal({
   const isCurrentUserAdminByConversation =
     adminId && String(adminId) === String(currentUserId);
   const isCurrentUserAdmin = Boolean(
-    isCurrentUserAdminByRole || isCurrentUserAdminByConversation
+    adminId ? isCurrentUserAdminByConversation : isCurrentUserAdminByRole
   );
   const canLeaveGroup = Boolean(currentUserId) && !isCurrentUserAdmin;
+  const canDissolveGroup = isCurrentUserAdmin;
 
   const handleEnterEditMode = () => {
     setEditName(selectedConversation.groupName || "");
@@ -273,9 +278,17 @@ function GroupInfoModal({
               {selectedGroupMembersList.map((member) => {
                 const memberId = member.id || member.user_id;
                 const memberAdminId = getUserId(selectedConversation?.groupAdmin);
-                const isMemberAdmin = memberAdminId && String(memberAdminId) === String(memberId);
+                const isMemberAdminByConversation =
+                  memberAdminId && String(memberAdminId) === String(memberId);
+                const isMemberAdminByRole =
+                  String(member?.role || "").toLowerCase() === "admin";
+                const isMemberAdmin = Boolean(
+                  memberAdminId ? isMemberAdminByConversation : isMemberAdminByRole
+                );
                 const isMe = String(memberId) === String(currentUserId);
                 const canRemove = isCurrentUserAdmin && !isMemberAdmin && !isMe;
+                const canTransferAdmin =
+                  isCurrentUserAdmin && !isMemberAdmin && !isMe && !isTransferringAdmin;
 
                 return (
                   <div key={memberId} className="group-info-member-row">
@@ -303,6 +316,17 @@ function GroupInfoModal({
                         <FaTrash />
                       </button>
                     )}
+                    {canTransferAdmin && (
+                      <button
+                        className="group-info-transfer-btn"
+                        onClick={() => onTransferAdmin?.(memberId)}
+                        title="Trao quyền admin"
+                        disabled={isTransferringAdmin}
+                      >
+                        <FaUserShield />
+                        <span>{isTransferringAdmin ? "Đang chuyển..." : "Trao admin"}</span>
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -320,9 +344,21 @@ function GroupInfoModal({
               </div>
             )}
 
+            {canDissolveGroup && (
+              <div className="group-info-action-row group-info-action-row--danger">
+                <button
+                  className="group-info-btn-danger"
+                  onClick={() => onDissolveGroup?.()}
+                  disabled={isDissolvingGroup || !canDissolveGroup}
+                >
+                  {isDissolvingGroup ? "Đang giải tán nhóm..." : "Giải tán nhóm"}
+                </button>
+              </div>
+            )}
+
             {isCurrentUserAdmin && (
               <p className="group-info-danger-note">
-                Bạn đang là admin. Vui lòng chuyển quyền admin trước khi rời nhóm.
+                Bạn đang là admin. Bạn có thể giải tán nhóm hoặc chuyển quyền admin trước khi rời nhóm.
               </p>
             )}
           </div>

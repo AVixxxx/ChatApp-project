@@ -10,6 +10,8 @@ import {
   addMemberToGroup,
   removeMemberFromGroup,
   leaveGroupConversation,
+  setGroupAdmin,
+  deleteGroupConversation,
   updateGroupInfo
 } from "@/features/chat/services/conversationService";
 import {
@@ -209,6 +211,8 @@ function HomePage() {
   const [isUpdatingGroup, setIsUpdatingGroup] = useState(false);
   const [isAddingMembers, setIsAddingMembers] = useState(false);
   const [isLeavingGroup, setIsLeavingGroup] = useState(false);
+  const [isTransferringAdmin, setIsTransferringAdmin] = useState(false);
+  const [isDissolvingGroup, setIsDissolvingGroup] = useState(false);
   const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
   const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
@@ -986,6 +990,64 @@ function HomePage() {
     }
   };
 
+  const handleTransferGroupAdmin = async (targetUserId) => {
+    const conversationId = currentConversation?.id;
+    const normalizedTargetUserId = String(targetUserId || "");
+
+    if (!conversationId || !normalizedTargetUserId) return;
+
+    const targetMember = (currentConversation?.members || []).find(
+      (member) => String(getUserId(member) || "") === normalizedTargetUserId
+    );
+    const targetDisplayName = getUserDisplayName(targetMember);
+
+    const isConfirmed = window.confirm(
+      `Bạn có chắc muốn trao quyền admin cho ${targetDisplayName}?`
+    );
+
+    if (!isConfirmed) return;
+
+    setIsTransferringAdmin(true);
+
+    try {
+      await setGroupAdmin(conversationId, normalizedTargetUserId);
+      setConversations((prev) =>
+        prev.map((conversation) => {
+          if (String(conversation.id) !== String(conversationId)) {
+            return conversation;
+          }
+
+          const nextMembers = Array.isArray(conversation.members)
+            ? conversation.members.map((member) => {
+                const memberId = String(getUserId(member) || "");
+                if (!memberId) return member;
+
+                return {
+                  ...member,
+                  role: memberId === normalizedTargetUserId ? "admin" : "member"
+                };
+              })
+            : conversation.members;
+
+          const nextGroupAdmin =
+            nextMembers?.find(
+              (member) => String(getUserId(member) || "") === normalizedTargetUserId
+            ) || targetMember || null;
+
+          return {
+            ...conversation,
+            members: nextMembers,
+            groupAdmin: nextGroupAdmin
+          };
+        })
+      );
+    } catch (error) {
+      alert(getApiErrorMessage(error, "Không thể chuyển quyền admin lúc này."));
+    } finally {
+      setIsTransferringAdmin(false);
+    }
+  };
+
   const handleLeaveGroup = async () => {
     const conversationId = currentConversation?.id;
     const currentUserId = user?.id;
@@ -993,15 +1055,19 @@ function HomePage() {
     if (!conversationId || !currentUserId) return;
 
     const adminId = getUserId(currentConversation?.groupAdmin);
+    const hasConversationAdmin = Boolean(adminId);
     const isCurrentUserAdminByConversation =
-      adminId && String(adminId) === String(currentUserId);
+      hasConversationAdmin && String(adminId) === String(currentUserId);
     const currentMember = (currentConversation?.members || []).find(
       (member) => String(getUserId(member)) === String(currentUserId)
     );
     const isCurrentUserAdminByRole =
       String(currentMember?.role || "").toLowerCase() === "admin";
 
-    if (isCurrentUserAdminByConversation || isCurrentUserAdminByRole) {
+    if (
+      isCurrentUserAdminByConversation ||
+      (!hasConversationAdmin && isCurrentUserAdminByRole)
+    ) {
       alert("Bạn đang là admin. Hãy chuyển quyền admin trước khi rời nhóm.");
       return;
     }
@@ -1029,6 +1095,60 @@ function HomePage() {
       alert(getApiErrorMessage(error, "Không thể rời nhóm lúc này."));
     } finally {
       setIsLeavingGroup(false);
+    }
+  };
+
+  const handleDissolveGroup = async () => {
+    const conversationId = currentConversation?.id;
+    const currentUserId = user?.id;
+
+    if (!conversationId || !currentUserId) return;
+
+    const adminId = getUserId(currentConversation?.groupAdmin);
+    const hasConversationAdmin = Boolean(adminId);
+    const isCurrentUserAdminByConversation =
+      hasConversationAdmin && String(adminId) === String(currentUserId);
+    const currentMember = (currentConversation?.members || []).find(
+      (member) => String(getUserId(member)) === String(currentUserId)
+    );
+    const isCurrentUserAdminByRole =
+      String(currentMember?.role || "").toLowerCase() === "admin";
+
+    const isCurrentUserAdmin =
+      isCurrentUserAdminByConversation ||
+      (!hasConversationAdmin && isCurrentUserAdminByRole);
+
+    if (!isCurrentUserAdmin) {
+      alert("Chỉ admin mới có quyền giải tán nhóm.");
+      return;
+    }
+
+    const isConfirmed = window.confirm(
+      "Bạn có chắc muốn giải tán nhóm này? Hành động này không thể hoàn tác."
+    );
+
+    if (!isConfirmed) return;
+
+    setIsDissolvingGroup(true);
+
+    try {
+      await deleteGroupConversation(conversationId);
+      setShowGroupInfoModal(false);
+      setConversations((prev) =>
+        prev.filter((conv) => String(conv.id) !== String(conversationId))
+      );
+      setSelectedConversationId((prev) =>
+        String(prev) === String(conversationId) ? null : prev
+      );
+      setUnreadCountByConversationId((prev) => {
+        const next = { ...prev };
+        delete next[conversationId];
+        return next;
+      });
+    } catch (error) {
+      alert(getApiErrorMessage(error, "Không thể giải tán nhóm lúc này."));
+    } finally {
+      setIsDissolvingGroup(false);
     }
   };
 
@@ -1162,17 +1282,22 @@ function HomePage() {
   useEffect(() => {
     if (!showGroupInfoModal || !currentConversation?.isGroup) return;
 
-    const refreshFriends = async () => {
+    const refreshGroupInfoContext = async () => {
       try {
-        const friends = await getFriends();
+        const [friends] = await Promise.all([
+          getFriends(),
+          currentConversation?.id
+            ? hydrateGroupConversationMembers(currentConversation.id)
+            : Promise.resolve()
+        ]);
         setAllUsers(Array.isArray(friends) ? friends : []);
       } catch (error) {
         console.error("Failed to refresh friends for add-members:", error);
       }
     };
 
-    refreshFriends();
-  }, [showGroupInfoModal, currentConversation?.isGroup]);
+    refreshGroupInfoContext();
+  }, [showGroupInfoModal, currentConversation?.id, currentConversation?.isGroup]);
 
   useEffect(() => {
     if (!selectedConversationId || isVirtualConversationId(selectedConversationId)) {
@@ -1460,11 +1585,64 @@ function HomePage() {
       hydrateGroupConversationMembers(convId);
     };
 
+    const handleGroupDissolved = ({ conversation_id }) => {
+      if (!conversation_id) return;
+
+      setShowGroupInfoModal(false);
+      setConversations((prev) =>
+        prev.filter((conv) => String(conv.id) !== String(conversation_id))
+      );
+      setUnreadCountByConversationId((prev) => {
+        const next = { ...prev };
+        delete next[conversation_id];
+        return next;
+      });
+
+      setSelectedConversationId((prev) =>
+        String(prev) === String(conversation_id) ? null : prev
+      );
+    };
+
+    const handleNewAdminAssigned = ({ conversation_id, newAdminId }) => {
+      if (!conversation_id || !newAdminId) return;
+
+      setConversations((prev) =>
+        prev.map((conv) => {
+          if (String(conv.id) !== String(conversation_id)) return conv;
+
+          const nextMembers = Array.isArray(conv.members)
+            ? conv.members.map((member) => {
+                const memberId = String(getUserId(member) || "");
+                if (!memberId) return member;
+
+                return {
+                  ...member,
+                  role: memberId === String(newAdminId) ? "admin" : "member"
+                };
+              })
+            : conv.members;
+
+          const nextGroupAdmin =
+            nextMembers?.find(
+              (member) => String(getUserId(member) || "") === String(newAdminId)
+            ) || conv.groupAdmin;
+
+          return {
+            ...conv,
+            members: nextMembers,
+            groupAdmin: nextGroupAdmin
+          };
+        })
+      );
+    };
+
     socketClient.on("group_updated", handleGroupUpdated);
     socketClient.on("new_member_joined", handleNewMemberJoined);
     socketClient.on("member_left", handleMemberLeft);
     socketClient.on("you_are_kicked", handleYouAreKicked);
     socketClient.on("added_to_group", handleAddedToGroup);
+    socketClient.on("group_dissolved", handleGroupDissolved);
+    socketClient.on("new_admin_assigned", handleNewAdminAssigned);
 
     return () => {
       socketClient.off("group_updated", handleGroupUpdated);
@@ -1472,6 +1650,8 @@ function HomePage() {
       socketClient.off("member_left", handleMemberLeft);
       socketClient.off("you_are_kicked", handleYouAreKicked);
       socketClient.off("added_to_group", handleAddedToGroup);
+      socketClient.off("group_dissolved", handleGroupDissolved);
+      socketClient.off("new_admin_assigned", handleNewAdminAssigned);
     };
   }, [
     allUsers,
@@ -2108,10 +2288,14 @@ function HomePage() {
         onUpdateGroupInfo={handleUpdateGroupInfo}
         onAddMembers={handleAddMembersToGroup}
         onRemoveMember={handleRemoveMemberFromGroup}
+        onTransferAdmin={handleTransferGroupAdmin}
         onLeaveGroup={handleLeaveGroup}
+        onDissolveGroup={handleDissolveGroup}
         isUpdatingGroup={isUpdatingGroup}
         isAddingMembers={isAddingMembers}
         isLeavingGroup={isLeavingGroup}
+        isTransferringAdmin={isTransferringAdmin}
+        isDissolvingGroup={isDissolvingGroup}
       />
 
       <GroupModal
