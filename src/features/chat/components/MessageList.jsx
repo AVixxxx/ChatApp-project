@@ -13,6 +13,15 @@ const getMessageAttachmentUrl = (message) =>
 const getMessageTimestamp = (message) =>
   message?.createdAt || message?.created_at || message?.create_at || "";
 
+const isSystemMessage = (message) =>
+  Boolean(
+    message?.isSystemMessage ||
+      message?.is_system_message ||
+      message?.type === "system" ||
+      message?.messageType === "system" ||
+      message?.message_type === "system"
+  );
+
 const isAttachmentMessageType = (messageType) =>
   messageType === "image" || messageType === "file";
 
@@ -112,6 +121,7 @@ function MessageList({
 
           {groupedMessages.map((group) => {
             const latestMessage = group.items[group.items.length - 1];
+            const isSystem = isSystemMessage(latestMessage);
             const isMe = group.senderId === String(userId || "");
             const messageType = group.type;
             const hasMultipleItems = group.items.length > 1;
@@ -133,6 +143,21 @@ function MessageList({
                 fileName: getMessageFileName(item, attachmentUrl)
               };
             });
+
+            if (isSystem) {
+              return (
+                <div key={group.id} className="message-row system-row">
+                  <div className="system-message">
+                    <span className="system-message-text">
+                      {latestMessage?.text || "Group updated"}
+                    </span>
+                    <span className="system-message-time">
+                      {formatTime(getMessageTimestamp(latestMessage))}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div key={group.id} className={`message-row ${isMe ? "me-row" : "other-row"}`}>

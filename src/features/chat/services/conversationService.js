@@ -150,3 +150,49 @@ export const getConversationMembers = async (conversationId) => {
     };
   });
 };
+
+export const addMemberToGroup = async (conversationId, userId) => {
+  const response = await chatApi.post(
+    `${CONVERSATION_API_PATH}/${conversationId}/add-members`,
+    { userId },
+    { headers: { ...getAuthHeaders() } }
+  );
+  return response.data;
+};
+
+export const removeMemberFromGroup = async (conversationId, targetUserId) => {
+  const response = await chatApi.delete(
+    `${CONVERSATION_API_PATH}/group/remove-member`,
+    {
+      headers: { ...getAuthHeaders() },
+      data: { conversation_id: conversationId, targetUserId }
+    }
+  );
+  return response.data;
+};
+
+export const leaveGroupConversation = async (conversationId, currentUserId) => {
+  const response = await chatApi.delete(
+    `${CONVERSATION_API_PATH}/group/remove-member`,
+    {
+      headers: { ...getAuthHeaders() },
+      data: { conversation_id: conversationId, targetUserId: currentUserId }
+    }
+  );
+
+  return response.data;
+};
+
+export const updateGroupInfo = async (conversationId, { name, avatarFile } = {}) => {
+  const formData = new FormData();
+  formData.append("conversation_id", conversationId);
+  if (name !== undefined && name !== null) formData.append("name", name);
+  if (avatarFile) formData.append("avatar", avatarFile);
+
+  const response = await chatApi.put(
+    `${CONVERSATION_API_PATH}/group/info`,
+    formData,
+    { headers: { ...getAuthHeaders() } }
+  );
+  return response.data;
+};

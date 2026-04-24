@@ -6,7 +6,11 @@ import {
   getConversations,
   getConversationMembers,
   createGroupConversation,
-  createPrivateConversation
+  createPrivateConversation,
+  addMemberToGroup,
+  removeMemberFromGroup,
+  leaveGroupConversation,
+  updateGroupInfo
 } from "@/features/chat/services/conversationService";
 import {
   getMessagesPage,
@@ -202,6 +206,9 @@ function HomePage() {
   const [groupModalError, setGroupModalError] = useState("");
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
+  const [isUpdatingGroup, setIsUpdatingGroup] = useState(false);
+  const [isAddingMembers, setIsAddingMembers] = useState(false);
+  const [isLeavingGroup, setIsLeavingGroup] = useState(false);
   const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
   const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
@@ -214,6 +221,7 @@ function HomePage() {
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const shouldScrollToBottomRef = useRef(false);
+  const systemMessageSequenceRef = useRef(0);
   const pendingPrependScrollRef = useRef(null);
   const isLoadingOlderMessagesRef = useRef(false);
   const failedOlderMessagesCursorRef = useRef(null);
@@ -676,6 +684,70 @@ function HomePage() {
     return fallbackMessage;
   };
 
+  const getGroupParticipantDisplayName = (targetUserId, conversationId) => {
+    const normalizedTargetId = getSafeId(targetUserId);
+    if (!normalizedTargetId) return "Một thành viên";
+
+    if (normalizedTargetId === getSafeId(user?.id)) {
+      return "Bạn";
+    }
+
+    const targetConversation = conversations.find(
+      (conversation) => String(conversation.id) === String(conversationId)
+    );
+
+    const matchedConversationMember = (targetConversation?.members || []).find(
+      (member) => getSafeId(getUserId(member)) === normalizedTargetId
+    );
+
+    if (matchedConversationMember) {
+      return getUserDisplayName(matchedConversationMember);
+    }
+
+    const matchedFriend = (allUsers || []).find(
+      (friend) => getSafeId(getUserId(friend)) === normalizedTargetId
+    );
+
+    if (matchedFriend) {
+      return getUserDisplayName(matchedFriend);
+    }
+
+    return getUserDisplayName(targetUserId);
+  };
+
+  const appendGroupSystemMessage = ({ conversationId, text, eventType, targetUserId }) => {
+    const normalizedConversationId = getSafeId(conversationId);
+    const messageText = String(text || "").trim();
+
+    if (!normalizedConversationId || !messageText) {
+      return;
+    }
+
+    systemMessageSequenceRef.current += 1;
+    const createdAt = new Date().toISOString();
+    const systemMessage = normalizeMessage({
+      id: `system-${eventType || "event"}-${normalizedConversationId}-${getSafeId(targetUserId) || "na"}-${systemMessageSequenceRef.current}`,
+      conversationId: normalizedConversationId,
+      text: messageText,
+      type: "system",
+      messageType: "system",
+      createdAt,
+      sender_id: null,
+      sender: null,
+      isSystemMessage: true
+    });
+
+    updateConversationWithNewMessage(systemMessage);
+
+    const isActiveConversation =
+      String(selectedConversationId || "") === normalizedConversationId;
+
+    if (isActiveConversation) {
+      shouldScrollToBottomRef.current = isNearBottom();
+      appendMessageWithoutDuplicate(systemMessage);
+    }
+  };
+
   const isNearBottom = () => {
     const container = messagesContainerRef.current;
     if (!container) return true;
@@ -857,6 +929,109 @@ function HomePage() {
     );
   };
 
+  const handleUpdateGroupInfo = async (name, avatarFile) => {
+    if (!currentConversation?.id) return;
+    setIsUpdatingGroup(true);
+    try {
+      const updated = await updateGroupInfo(currentConversation.id, { name, avatarFile });
+      setConversations((prev) =>
+        prev.map((conv) => {
+          if (conv.id !== currentConversation.id) return conv;
+          return {
+            ...conv,
+            groupName: updated?.name ?? name ?? conv.groupName,
+            groupAvatar: updated?.avatar_url ?? updated?.avatar ?? conv.groupAvatar
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Failed to update group info:", error);
+    } finally {
+      setIsUpdatingGroup(false);
+    }
+  };
+
+  const handleAddMembersToGroup = async (userIds) => {
+    if (!currentConversation?.id || !Array.isArray(userIds) || userIds.length === 0) return;
+    setIsAddingMembers(true);
+    try {
+      for (const uid of userIds) {
+        await addMemberToGroup(currentConversation.id, uid);
+      }
+      await hydrateGroupConversationMembers(currentConversation.id);
+    } catch (error) {
+      console.error("Failed to add members:", error);
+    } finally {
+      setIsAddingMembers(false);
+    }
+  };
+
+  const handleRemoveMemberFromGroup = async (targetUserId) => {
+    if (!currentConversation?.id || !targetUserId) return;
+    try {
+      await removeMemberFromGroup(currentConversation.id, targetUserId);
+      setConversations((prev) =>
+        prev.map((conv) => {
+          if (conv.id !== currentConversation.id) return conv;
+          return {
+            ...conv,
+            members: (conv.members || []).filter(
+              (m) => String(m.id || m.user_id) !== String(targetUserId)
+            )
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Failed to remove member:", error);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    const conversationId = currentConversation?.id;
+    const currentUserId = user?.id;
+
+    if (!conversationId || !currentUserId) return;
+
+    const adminId = getUserId(currentConversation?.groupAdmin);
+    const isCurrentUserAdminByConversation =
+      adminId && String(adminId) === String(currentUserId);
+    const currentMember = (currentConversation?.members || []).find(
+      (member) => String(getUserId(member)) === String(currentUserId)
+    );
+    const isCurrentUserAdminByRole =
+      String(currentMember?.role || "").toLowerCase() === "admin";
+
+    if (isCurrentUserAdminByConversation || isCurrentUserAdminByRole) {
+      alert("Bạn đang là admin. Hãy chuyển quyền admin trước khi rời nhóm.");
+      return;
+    }
+
+    const isConfirmed = window.confirm("Bạn có chắc muốn rời nhóm này?");
+    if (!isConfirmed) return;
+
+    setIsLeavingGroup(true);
+
+    try {
+      await leaveGroupConversation(conversationId, currentUserId);
+      setShowGroupInfoModal(false);
+      setConversations((prev) =>
+        prev.filter((conv) => String(conv.id) !== String(conversationId))
+      );
+      setSelectedConversationId((prev) =>
+        String(prev) === String(conversationId) ? null : prev
+      );
+      setUnreadCountByConversationId((prev) => {
+        const next = { ...prev };
+        delete next[conversationId];
+        return next;
+      });
+    } catch (error) {
+      alert(getApiErrorMessage(error, "Không thể rời nhóm lúc này."));
+    } finally {
+      setIsLeavingGroup(false);
+    }
+  };
+
   const handleCreateGroup = async () => {
     if (!groupName.trim()) {
       setGroupModalError("Please enter a group name.");
@@ -951,6 +1126,8 @@ function HomePage() {
           getFriends()
         ]);
 
+        setAllUsers(Array.isArray(friendData) ? friendData : []);
+
         const mergedConversations = mergeConversationsWithFriends(
           conversationData,
           friendData
@@ -981,6 +1158,21 @@ function HomePage() {
 
     fetchConversations();
   }, []);
+
+  useEffect(() => {
+    if (!showGroupInfoModal || !currentConversation?.isGroup) return;
+
+    const refreshFriends = async () => {
+      try {
+        const friends = await getFriends();
+        setAllUsers(Array.isArray(friends) ? friends : []);
+      } catch (error) {
+        console.error("Failed to refresh friends for add-members:", error);
+      }
+    };
+
+    refreshFriends();
+  }, [showGroupInfoModal, currentConversation?.isGroup]);
 
   useEffect(() => {
     if (!selectedConversationId || isVirtualConversationId(selectedConversationId)) {
@@ -1184,6 +1376,111 @@ function HomePage() {
     };
   }, [socketClient]);
 
+  // Group event listeners
+  useEffect(() => {
+    if (!socketClient) return;
+
+    const handleGroupUpdated = (updatedGroup) => {
+      if (!updatedGroup?.conversation_id && !updatedGroup?.id) return;
+      const convId = updatedGroup.conversation_id || updatedGroup.id;
+      setConversations((prev) =>
+        prev.map((conv) => {
+          if (String(conv.id) !== String(convId)) return conv;
+          return {
+            ...conv,
+            groupName: updatedGroup.name ?? conv.groupName,
+            groupAvatar: updatedGroup.avatar_url ?? updatedGroup.avatar ?? conv.groupAvatar
+          };
+        })
+      );
+    };
+
+    const handleNewMemberJoined = ({ conversation_id, userId: joinedUserId }) => {
+      if (!conversation_id) return;
+      hydrateGroupConversationMembers(conversation_id);
+
+      const memberName = getGroupParticipantDisplayName(
+        joinedUserId,
+        conversation_id
+      );
+
+      appendGroupSystemMessage({
+        conversationId: conversation_id,
+        targetUserId: joinedUserId,
+        eventType: "member-joined",
+        text: `${memberName} da duoc them vao nhom`
+      });
+    };
+
+    const handleMemberLeft = ({
+      conversation_id,
+      userId: leftUserId,
+      isKicked
+    }) => {
+      if (!conversation_id) return;
+
+      const memberName = getGroupParticipantDisplayName(
+        leftUserId,
+        conversation_id
+      );
+
+      setConversations((prev) =>
+        prev.map((conv) => {
+          if (String(conv.id) !== String(conversation_id)) return conv;
+          return {
+            ...conv,
+            members: (conv.members || []).filter(
+              (m) => String(m.id || m.user_id) !== String(leftUserId)
+            )
+          };
+        })
+      );
+
+      appendGroupSystemMessage({
+        conversationId: conversation_id,
+        targetUserId: leftUserId,
+        eventType: isKicked ? "member-kicked" : "member-left",
+        text: isKicked
+          ? `${memberName} da bi moi khoi nhom`
+          : `${memberName} da roi nhom`
+      });
+    };
+
+    const handleYouAreKicked = ({ conversation_id }) => {
+      setShowGroupInfoModal(false);
+      setConversations((prev) => prev.filter((conv) => String(conv.id) !== String(conversation_id)));
+      if (String(selectedConversationId) === String(conversation_id)) {
+        setSelectedConversationId(null);
+      }
+    };
+
+    const handleAddedToGroup = (payload) => {
+      const convId = payload?.conversation_id || payload?.id;
+      if (!convId) return;
+      hydrateGroupConversationMembers(convId);
+    };
+
+    socketClient.on("group_updated", handleGroupUpdated);
+    socketClient.on("new_member_joined", handleNewMemberJoined);
+    socketClient.on("member_left", handleMemberLeft);
+    socketClient.on("you_are_kicked", handleYouAreKicked);
+    socketClient.on("added_to_group", handleAddedToGroup);
+
+    return () => {
+      socketClient.off("group_updated", handleGroupUpdated);
+      socketClient.off("new_member_joined", handleNewMemberJoined);
+      socketClient.off("member_left", handleMemberLeft);
+      socketClient.off("you_are_kicked", handleYouAreKicked);
+      socketClient.off("added_to_group", handleAddedToGroup);
+    };
+  }, [
+    allUsers,
+    conversations,
+    selectedConversationId,
+    socketClient,
+    user?.id
+  ]);
+
   useEffect(() => {
     setShowGroupInfoModal(false);
   }, [selectedConversationId]);
@@ -1360,6 +1657,18 @@ function HomePage() {
     : [];
 
   const selectedGroupMemberCount = selectedGroupMembersList.length;
+
+  const availableFriendsToAdd = currentConversation?.isGroup
+    ? (allUsers || []).filter((friend) => {
+        const friendId = String(getUserId(friend) || "");
+        return (
+          friendId &&
+          !selectedGroupMembersList.some(
+            (m) => String(getUserId(m) || "") === friendId
+          )
+        );
+      })
+    : [];
 
   const filteredConversations = [...conversations]
     .sort((firstConversation, secondConversation) => {
@@ -1794,6 +2103,15 @@ function HomePage() {
         close={() => setShowGroupInfoModal(false)}
         getUserId={getUserId}
         getGroupInfoMemberAvatar={getGroupInfoMemberAvatar}
+        currentUserId={user?.id}
+        availableFriendsToAdd={availableFriendsToAdd}
+        onUpdateGroupInfo={handleUpdateGroupInfo}
+        onAddMembers={handleAddMembersToGroup}
+        onRemoveMember={handleRemoveMemberFromGroup}
+        onLeaveGroup={handleLeaveGroup}
+        isUpdatingGroup={isUpdatingGroup}
+        isAddingMembers={isAddingMembers}
+        isLeavingGroup={isLeavingGroup}
       />
 
       <GroupModal
