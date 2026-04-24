@@ -31,7 +31,10 @@ function ChatWindow({
   handleRecallMessage,
   handleRecallMessageGroup,
   handleDeleteMessage,
-  handleDeleteMessageGroup
+  handleDeleteMessageGroup,
+  onStartAudioCall,
+  onStartVideoCall,
+  isCallActionDisabled = false
 }) {
   const [selectedImage, setSelectedImage] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -182,8 +185,24 @@ function ChatWindow({
         </div>
 
         <div className="chat-header-actions">
-          <FaPhone className="header-action-icon" />
-          <FaVideo className="header-action-icon" />
+          <button
+            type="button"
+            className="header-action-btn"
+            onClick={onStartAudioCall}
+            disabled={isCallActionDisabled}
+            title="Start audio call"
+          >
+            <FaPhone className="header-action-icon" />
+          </button>
+          <button
+            type="button"
+            className="header-action-btn"
+            onClick={onStartVideoCall}
+            disabled={isCallActionDisabled}
+            title="Start video call"
+          >
+            <FaVideo className="header-action-icon" />
+          </button>
         </div>
       </div>
 

@@ -38,6 +38,9 @@ import GroupModal from "@/features/chat/components/GroupModal";
 import GroupInfoModal from "@/features/chat/components/GroupInfoModal";
 import AddFriendModal from "@/features/chat/components/AddFriendModal";
 import FriendProfileModal from "@/features/contacts/components/FriendProfileModal";
+import CallOverlay from "@/features/chat/components/CallOverlay";
+import { useGroupCall } from "@/features/chat/hooks/useGroupCall";
+import CallParticipantModal from "@/features/chat/components/CallParticipantModal";
 
 const getEntityId = (entity) => {
   if (!entity || typeof entity !== "object") return null;
@@ -203,11 +206,17 @@ function HomePage() {
   const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [unreadCountByConversationId, setUnreadCountByConversationId] = useState({});
+  const [isCallParticipantModalOpen, setIsCallParticipantModalOpen] = useState(false);
+  const [selectedCallParticipantIds, setSelectedCallParticipantIds] = useState([]);
+  const [pendingCallMode, setPendingCallMode] = useState("video");
+  const [callParticipantError, setCallParticipantError] = useState("");
+  const [isStartingSelectedCall, setIsStartingSelectedCall] = useState(false);
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const shouldScrollToBottomRef = useRef(false);
   const pendingPrependScrollRef = useRef(null);
   const isLoadingOlderMessagesRef = useRef(false);
+  const failedOlderMessagesCursorRef = useRef(null);
   const [messagePageCursor, setMessagePageCursor] = useState(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [isInitialMessagesLoading, setIsInitialMessagesLoading] = useState(false);
@@ -693,11 +702,13 @@ function HomePage() {
       setMessages(page.messages);
       setMessagePageCursor(page.nextCursor || null);
       setHasMoreMessages(Boolean(page.nextCursor));
+      failedOlderMessagesCursorRef.current = null;
     } catch (error) {
       console.error("Failed to load messages:", error);
       setMessages([]);
       setMessagePageCursor(null);
       setHasMoreMessages(false);
+      failedOlderMessagesCursorRef.current = null;
     } finally {
       setIsInitialMessagesLoading(false);
     }
@@ -709,7 +720,8 @@ function HomePage() {
       isVirtualConversationId(selectedConversationId) ||
       !hasMoreMessages ||
       isLoadingOlderMessagesRef.current ||
-      !messagePageCursor
+      !messagePageCursor ||
+      failedOlderMessagesCursorRef.current === messagePageCursor
     ) {
       return;
     }
@@ -748,8 +760,12 @@ function HomePage() {
       const hasOlderBatch = Array.isArray(page.messages) && page.messages.length > 0;
       const cursorMoved = page.nextCursor && page.nextCursor !== previousCursor;
       setHasMoreMessages(Boolean(page.nextCursor) && hasOlderBatch && cursorMoved);
+      failedOlderMessagesCursorRef.current = null;
     } catch (error) {
       console.error("Failed to load older messages:", error);
+      failedOlderMessagesCursorRef.current = messagePageCursor;
+      setHasMoreMessages(false);
+      pendingPrependScrollRef.current = null;
     } finally {
       isLoadingOlderMessagesRef.current = false;
       setIsLoadingOlderMessages(false);
@@ -1000,6 +1016,7 @@ function HomePage() {
     setMessages([]);
     setMessagePageCursor(null);
     setHasMoreMessages(true);
+    failedOlderMessagesCursorRef.current = null;
     setIsLoadingOlderMessages(false);
     isLoadingOlderMessagesRef.current = false;
     loadInitialMessages(selectedConversationId);
@@ -1424,6 +1441,73 @@ function HomePage() {
   const getGroupPickerMemberAvatar = (member) =>
     getAvatarUrl(member, GROUP_PICKER_MEMBER_AVATAR_URL);
 
+  const toggleCallParticipant = (memberId) => {
+    setCallParticipantError("");
+    setSelectedCallParticipantIds((prev) =>
+      prev.includes(memberId)
+        ? prev.filter((id) => id !== memberId)
+        : [...prev, memberId]
+    );
+  };
+
+  const closeCallParticipantModal = () => {
+    if (isStartingSelectedCall) return;
+    setIsCallParticipantModalOpen(false);
+    setSelectedCallParticipantIds([]);
+    setPendingCallMode("video");
+    setCallParticipantError("");
+  };
+
+  const handleRequestStartCall = (mode = "video") => {
+    if (!currentConversation?.id) return;
+
+    if (!currentConversation?.isGroup) {
+      startCall({ mode });
+      return;
+    }
+
+    const availableParticipants = Array.isArray(currentConversation.members)
+      ? currentConversation.members.filter(
+          (member) => getSafeId(getUserId(member)) && getSafeId(getUserId(member)) !== getSafeId(user?.id)
+        )
+      : [];
+
+    if (availableParticipants.length === 0) {
+      clearCallError();
+      return;
+    }
+
+    setPendingCallMode(mode);
+    setSelectedCallParticipantIds(
+      availableParticipants.map((member) => getSafeId(getUserId(member)))
+    );
+    setCallParticipantError("");
+    setIsCallParticipantModalOpen(true);
+  };
+
+  const handleConfirmStartSelectedCall = async () => {
+    if (selectedCallParticipantIds.length === 0) {
+      setCallParticipantError("Hãy chọn ít nhất 1 thành viên.");
+      return;
+    }
+
+    try {
+      setIsStartingSelectedCall(true);
+      const didStart = await startCall({
+        mode: pendingCallMode,
+        selectedParticipantIds: selectedCallParticipantIds
+      });
+
+      if (didStart) {
+        setIsCallParticipantModalOpen(false);
+        setSelectedCallParticipantIds([]);
+        setCallParticipantError("");
+      }
+    } finally {
+      setIsStartingSelectedCall(false);
+    }
+  };
+
   const openAddFriendModal = () => {
     setIsAddFriendModalOpen(true);
     setAddFriendKeyword("");
@@ -1590,6 +1674,28 @@ function HomePage() {
   };
 
   const selectedStatusInfo = getDirectChatStatusInfo(currentConversation);
+  const {
+    activeCall,
+    callPhase,
+    localStream,
+    remoteParticipants,
+    errorMessage: callErrorMessage,
+    isLocalAudioEnabled,
+    isLocalVideoEnabled,
+    canStartCall,
+    startCall,
+    acceptIncomingCall,
+    declineIncomingCall,
+    endCall,
+    toggleMicrophone,
+    toggleCamera,
+    clearCallError
+  } = useGroupCall({
+    socket: socketClient,
+    currentConversation,
+    currentUser: user,
+    getUserId
+  });
 
   const handleOpenFriendProfileFromConversation = (conversation) => {
     if (!conversation || conversation.isGroup) return;
@@ -1673,6 +1779,9 @@ function HomePage() {
         handleRecallMessageGroup={handleRecallMessageGroup}
         handleDeleteMessage={handleDeleteMessage}
         handleDeleteMessageGroup={handleDeleteMessageGroup}
+        onStartAudioCall={() => handleRequestStartCall("audio")}
+        onStartVideoCall={() => handleRequestStartCall("video")}
+        isCallActionDisabled={!canStartCall}
       />
 
       <RightPanel openGroupModal={openGroupModal} />
@@ -1721,6 +1830,48 @@ function HomePage() {
           setShowFriendProfileModal(false);
           setSelectedFriendProfile(null);
         }}
+      />
+
+      <CallParticipantModal
+        isOpen={isCallParticipantModalOpen}
+        title={pendingCallMode === "audio" ? "Chọn thành viên cho cuộc gọi thoại" : "Chọn thành viên cho cuộc gọi video"}
+        members={
+          Array.isArray(currentConversation?.members)
+            ? currentConversation.members
+                .filter(
+                  (member) =>
+                    getSafeId(getUserId(member)) &&
+                    getSafeId(getUserId(member)) !== getSafeId(user?.id)
+                )
+                .map((member) => ({
+                  ...member,
+                  id: getSafeId(getUserId(member))
+                }))
+            : []
+        }
+        selectedMemberIds={selectedCallParticipantIds}
+        toggleMember={toggleCallParticipant}
+        getMemberAvatar={getGroupPickerMemberAvatar}
+        onClose={closeCallParticipantModal}
+        onConfirm={handleConfirmStartSelectedCall}
+        isSubmitting={isStartingSelectedCall}
+        errorMessage={callParticipantError}
+      />
+
+      <CallOverlay
+        activeCall={activeCall}
+        callPhase={callPhase}
+        localStream={localStream}
+        remoteParticipants={remoteParticipants}
+        errorMessage={callErrorMessage}
+        isLocalAudioEnabled={isLocalAudioEnabled}
+        isLocalVideoEnabled={isLocalVideoEnabled}
+        onAccept={acceptIncomingCall}
+        onDecline={declineIncomingCall}
+        onEnd={() => endCall({ notifyPeers: true })}
+        onToggleMicrophone={toggleMicrophone}
+        onToggleCamera={toggleCamera}
+        onDismissError={clearCallError}
       />
     </div>
   );
