@@ -88,6 +88,18 @@ const getSafeId = (value) => {
   return String(value);
 };
 
+const escapeSelectorValue = (value) => {
+  const safeValue = getSafeId(value);
+
+  if (!safeValue) return "";
+
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(safeValue);
+  }
+
+  return safeValue.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+};
+
 const parseOnlineValue = (value) => {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value === 1;
@@ -194,6 +206,7 @@ function HomePage() {
   });
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const [replyTarget, setReplyTarget] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
   const [addFriendKeyword, setAddFriendKeyword] = useState("");
@@ -222,6 +235,7 @@ function HomePage() {
   const [pendingCallMode, setPendingCallMode] = useState("video");
   const [callParticipantError, setCallParticipantError] = useState("");
   const [isStartingSelectedCall, setIsStartingSelectedCall] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState(null);
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const shouldScrollToBottomRef = useRef(false);
@@ -229,6 +243,7 @@ function HomePage() {
   const pendingPrependScrollRef = useRef(null);
   const isLoadingOlderMessagesRef = useRef(false);
   const failedOlderMessagesCursorRef = useRef(null);
+  const replyHighlightTimeoutRef = useRef(null);
   const [messagePageCursor, setMessagePageCursor] = useState(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [isInitialMessagesLoading, setIsInitialMessagesLoading] = useState(false);
@@ -570,18 +585,19 @@ function HomePage() {
     };
 
     setMessages((prev) => {
+      const messageWithReplyPreview = attachReplyPreview(message, prev);
       const exists = prev.some((existingMessage) => {
-        if (existingMessage.id && message.id) {
-          return existingMessage.id === message.id;
+        if (existingMessage.id && messageWithReplyPreview.id) {
+          return existingMessage.id === messageWithReplyPreview.id;
         }
 
         const sameConversation =
           (existingMessage.conversationId || existingMessage.conversation_id) ===
-          (message.conversationId || message.conversation_id);
+          (messageWithReplyPreview.conversationId || messageWithReplyPreview.conversation_id);
         const sameSender =
           (existingMessage.sender_id || getUserId(existingMessage.sender)) ===
-          (message.sender_id || getUserId(message.sender));
-        const sameText = (existingMessage.text || "") === (message.text || "");
+          (messageWithReplyPreview.sender_id || getUserId(messageWithReplyPreview.sender));
+        const sameText = (existingMessage.text || "") === (messageWithReplyPreview.text || "");
         const existingCreatedAt =
           existingMessage.createdAt ||
           existingMessage.created_at ||
@@ -592,11 +608,18 @@ function HomePage() {
       });
 
       if (exists) return prev;
-      return [...prev, message].sort(
+      return attachReplyPreviews([...prev, messageWithReplyPreview]).sort(
         (firstMessage, secondMessage) =>
           toTimestamp(firstMessage) - toTimestamp(secondMessage)
       );
     });
+  };
+
+  const handleReplyMessage = (message) => {
+    const replyPreview = createReplyPreview(message);
+    if (!replyPreview) return;
+
+    setReplyTarget(replyPreview);
   };
 
   const removeMessagesByIds = (messageIds) => {
@@ -775,7 +798,7 @@ function HomePage() {
     try {
       const page = await getMessagesPage(conversationId, { limit: MESSAGE_PAGE_SIZE });
       shouldScrollToBottomRef.current = true;
-      setMessages(page.messages);
+      setMessages(attachReplyPreviews(page.messages));
       setMessagePageCursor(page.nextCursor || null);
       setHasMoreMessages(Boolean(page.nextCursor));
       failedOlderMessagesCursorRef.current = null;
@@ -824,7 +847,7 @@ function HomePage() {
       setMessages((prev) => {
         const existingIds = new Set(prev.map((message) => message.id));
         const olderMessages = page.messages.filter((message) => !existingIds.has(message.id));
-        return [...olderMessages, ...prev].sort(
+        return attachReplyPreviews([...olderMessages, ...prev]).sort(
           (firstMessage, secondMessage) =>
             new Date(firstMessage.createdAt || firstMessage.created_at || firstMessage.create_at || 0) -
             new Date(secondMessage.createdAt || secondMessage.created_at || secondMessage.create_at || 0)
@@ -1665,9 +1688,23 @@ function HomePage() {
     setShowGroupInfoModal(false);
   }, [selectedConversationId]);
 
+  useEffect(() => {
+    setReplyTarget(null);
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    clearReplyHighlight();
+
+    return () => {
+      clearReplyHighlight();
+    };
+  }, [selectedConversationId]);
+
   const handleSendMessage = async (payload = {}) => {
     const messageText = String(payload?.text ?? newMessage ?? "").trim();
     const attachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
+    const onUploadProgress = payload?.onUploadProgress;
+    const activeReplyTarget = replyTarget;
 
     if (!messageText && attachments.length === 0) return;
 
@@ -1682,8 +1719,22 @@ function HomePage() {
         .filter(Boolean);
 
       const hasFiles = files.length > 0;
+      const hasVoiceAttachment = attachments.some(
+        (attachment) => attachment?.kind === "voice"
+      );
+      const hasNonVoiceAttachment = attachments.some(
+        (attachment) => attachment?.kind !== "voice"
+      );
+
+      if (hasVoiceAttachment && hasNonVoiceAttachment) {
+        alert("Chua ho tro gui cung luc voice voi file/anh. Vui long gui rieng.");
+        return;
+      }
+
       const messageType = hasFiles
-        ? attachments.every((attachment) => attachment?.kind === "image")
+        ? hasVoiceAttachment
+          ? "audio"
+          : attachments.every((attachment) => attachment?.kind === "image")
           ? "image"
           : "file"
         : "text";
@@ -1692,13 +1743,18 @@ function HomePage() {
         conversationId: targetConversationId,
         text: messageText,
         files: hasFiles ? files : undefined,
-        messageType
+        messageType,
+        onUploadProgress,
+        parent_id: activeReplyTarget?.id || undefined
       });
 
       const sentMessages = Array.isArray(sentPayload) ? sentPayload : [sentPayload];
+      const replyPreview = activeReplyTarget ? { ...activeReplyTarget } : null;
 
       sentMessages.filter(Boolean).forEach((message) => {
-        appendMessageWithoutDuplicate(message);
+        appendMessageWithoutDuplicate(
+          replyPreview ? { ...message, replyPreview } : message
+        );
       });
 
       const latestMessage = sentMessages[sentMessages.length - 1];
@@ -1707,6 +1763,7 @@ function HomePage() {
       }
 
       setNewMessage("");
+      setReplyTarget(null);
     } catch (error) {
       console.error("Failed to send message:", error);
       throw error;
@@ -1922,6 +1979,190 @@ function HomePage() {
     );
 
     return matchedMember ? getUserDisplayName(matchedMember) : "Unknown";
+  };
+
+  const getMessageType = (message) =>
+    message?.messageType ||
+    message?.message_type ||
+    message?.type ||
+    (message?.fileUrl || message?.file_url ? "file" : "text");
+
+  const getReplyPreviewContent = (message) => {
+    if (!message) return "Tin nhắn";
+
+    const messageType = getMessageType(message);
+    const isRecalled = Boolean(message?.isRecalled ?? message?.is_recalled);
+
+    if (isRecalled) {
+      return "[Tin nhắn đã được thu hồi]";
+    }
+
+    const text = String(message?.text || message?.content || message?.message || "").trim();
+
+    if (messageType === "image") {
+      return text || "Hình ảnh";
+    }
+
+    if (messageType === "file") {
+      return text || "Tệp đính kèm";
+    }
+
+    if (messageType === "audio" || messageType === "voice") {
+      return text || "Tin nhắn thoại";
+    }
+
+    return text || "Tin nhắn";
+  };
+
+  const getReplyPreviewAttachment = (message) => {
+    if (!message) return null;
+
+    const messageType = getMessageType(message);
+    const attachmentUrl =
+      message?.imageUrl || message?.fileUrl || message?.file_url || "";
+
+    if (messageType === "image") {
+      return {
+        url: attachmentUrl,
+        kind: "image",
+        name: "Hình ảnh"
+      };
+    }
+
+    if (messageType === "file") {
+      return {
+        url: attachmentUrl,
+        kind: "file",
+        name:
+          String(message?.text || message?.content || message?.file_name || message?.originalname || "")
+            .trim() || "Tệp đính kèm"
+      };
+    }
+
+    if (messageType === "audio" || messageType === "voice") {
+      return {
+        url: attachmentUrl,
+        kind: "audio",
+        name: "Tin nhắn thoại"
+      };
+    }
+
+    return null;
+  };
+
+  const createReplyPreview = (message) => {
+    const messageId = getEntityId(message);
+    if (!messageId) return null;
+
+    return {
+      id: messageId,
+      senderName: getMessageSenderName(message),
+      messageType: getMessageType(message),
+      content: getReplyPreviewContent(message),
+      attachment: getReplyPreviewAttachment(message)
+    };
+  };
+
+  const getReplyTargetMessageId = (message) =>
+    message?.parent_id || message?.parentId || message?.reply_to || message?.replyTo || null;
+
+  const attachReplyPreview = (message, messageList = []) => {
+    if (!message || typeof message !== "object") return message;
+
+    const existingReplyPreview = message.replyPreview || message.reply_preview;
+    if (existingReplyPreview) {
+      return {
+        ...message,
+        replyPreview: existingReplyPreview
+      };
+    }
+
+    const replyTargetId = getReplyTargetMessageId(message);
+    if (!replyTargetId) {
+      return message;
+    }
+
+    const parentMessage = (Array.isArray(messageList) ? messageList : []).find(
+      (item) => getSafeId(getEntityId(item)) === getSafeId(replyTargetId)
+    );
+
+    if (!parentMessage) {
+      return message;
+    }
+
+    const replyPreview = createReplyPreview(parentMessage);
+    if (!replyPreview) {
+      return message;
+    }
+
+    return {
+      ...message,
+      replyPreview
+    };
+  };
+
+  const attachReplyPreviews = (messageList = []) => {
+    const normalizedList = Array.isArray(messageList) ? messageList : [];
+
+    return normalizedList.map((message) => attachReplyPreview(message, normalizedList));
+  };
+
+  const clearReplyHighlight = () => {
+    if (replyHighlightTimeoutRef.current) {
+      window.clearTimeout(replyHighlightTimeoutRef.current);
+      replyHighlightTimeoutRef.current = null;
+    }
+
+    setHighlightedMessageId(null);
+  };
+
+  const focusReplyTargetMessage = (targetMessageId) => {
+    const safeTargetId = getSafeId(targetMessageId);
+    if (!safeTargetId) return false;
+
+    const container = messagesContainerRef.current;
+    if (!container) return false;
+
+    const escapedId = escapeSelectorValue(safeTargetId);
+    if (!escapedId) return false;
+
+    const targetElement = container.querySelector(`[data-message-ids~="${escapedId}"]`);
+    if (!targetElement) return false;
+
+    if (typeof targetElement.scrollIntoView === "function") {
+      targetElement.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    if (typeof targetElement.focus === "function") {
+      targetElement.focus({ preventScroll: true });
+    }
+
+    return true;
+  };
+
+  const handleReplyPreviewDoubleClick = (replyPreview) => {
+    const targetMessageId = getSafeId(replyPreview?.id);
+    if (!targetMessageId) return;
+
+    const matchedMessage = messages.find(
+      (message) => getSafeId(getEntityId(message)) === targetMessageId
+    );
+
+    if (!matchedMessage) return;
+
+    focusReplyTargetMessage(targetMessageId);
+    clearReplyHighlight();
+
+    window.requestAnimationFrame(() => {
+      setHighlightedMessageId(targetMessageId);
+
+      replyHighlightTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedMessageId((currentId) =>
+          getSafeId(currentId) === targetMessageId ? null : currentId
+        );
+        replyHighlightTimeoutRef.current = null;
+      }, 2400);
+    });
   };
 
   const getGroupInfoMemberAvatar = (member) =>
@@ -2263,6 +2504,11 @@ function HomePage() {
         isInitialMessagesLoading={isInitialMessagesLoading}
         newMessage={newMessage}
         setNewMessage={setNewMessage}
+        replyTarget={replyTarget}
+        onReplyMessage={handleReplyMessage}
+        onClearReplyTarget={() => setReplyTarget(null)}
+        highlightedMessageId={highlightedMessageId}
+        onReplyPreviewDoubleClick={handleReplyPreviewDoubleClick}
         handleSendMessage={handleSendMessage}
         handleRecallMessage={handleRecallMessage}
         handleRecallMessageGroup={handleRecallMessageGroup}

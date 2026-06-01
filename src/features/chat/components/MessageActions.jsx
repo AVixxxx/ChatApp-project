@@ -8,6 +8,7 @@ function MessageActions({
   onClose,
   canRecall,
   canDeleteForMe,
+  onReplyMessage,
   onCopyMessage,
   onCopyImage,
   onDownloadImage,
@@ -71,6 +72,16 @@ function MessageActions({
             ) : null
           ) : messageType === "image" ? (
             <>
+              <button
+                type="button"
+                className="message-action-item"
+                onClick={() => {
+                  onReplyMessage?.(message);
+                  onClose?.();
+                }}
+              >
+                Trả lời
+              </button>
               <button
                 type="button"
                 className="message-action-item"
@@ -150,6 +161,16 @@ function MessageActions({
                 type="button"
                 className="message-action-item"
                 onClick={() => {
+                  onReplyMessage?.(message);
+                  onClose?.();
+                }}
+              >
+                Trả lời
+              </button>
+              <button
+                type="button"
+                className="message-action-item"
+                onClick={() => {
                   onDownloadFile?.(message);
                   onClose?.();
                 }}
@@ -211,6 +232,16 @@ function MessageActions({
             </>
           ) : (
             <>
+              <button
+                type="button"
+                className="message-action-item"
+                onClick={() => {
+                  onReplyMessage?.(message);
+                  onClose?.();
+                }}
+              >
+                Trả lời
+              </button>
               <button
                 type="button"
                 className="message-action-item"

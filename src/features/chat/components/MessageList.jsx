@@ -1,5 +1,6 @@
 import { FaDownload, FaFileAlt, FaFilePdf, FaFileWord, FaHeart } from "react-icons/fa";
 import MessageActions from "./MessageActions";
+import VoiceMessagePlayer from "./VoiceMessagePlayer";
 
 const getMessageType = (message) =>
   message?.type ||
@@ -23,7 +24,10 @@ const isSystemMessage = (message) =>
   );
 
 const isAttachmentMessageType = (messageType) =>
-  messageType === "image" || messageType === "file";
+  messageType === "image" ||
+  messageType === "file" ||
+  messageType === "voice" ||
+  messageType === "audio";
 
 const getMessageFileName = (message, attachmentUrl) => {
   const explicitName = (message?.text || "").trim();
@@ -140,6 +144,9 @@ function MessageList({
   openMessageActionsId,
   onToggleMessageActions,
   onCloseMessageActions,
+  onReplyMessage,
+  highlightedMessageId,
+  onReplyPreviewDoubleClick,
   onCopyMessage,
   onCopyImage,
   onDownloadImage,
@@ -174,6 +181,11 @@ function MessageList({
             const isRecalled = Boolean(
               latestMessage?.isRecalled ?? latestMessage?.is_recalled
             );
+            const replyPreview = latestMessage?.replyPreview || latestMessage?.reply_preview;
+            const groupMessageIds = group.items
+              .map((item) => String(item?.id || item?.message_id || item?._id || ""))
+              .filter(Boolean);
+            const isHighlighted = groupMessageIds.includes(String(highlightedMessageId || ""));
             const actionMessage =
               hasMultipleItems && isAttachmentMessageType(messageType)
                 ? {
@@ -206,7 +218,12 @@ function MessageList({
             }
 
             return (
-              <div key={group.id} className={`message-row ${isMe ? "me-row" : "other-row"}`}>
+              <div
+                key={group.id}
+                className={`message-row ${isMe ? "me-row" : "other-row"} ${isHighlighted ? "is-reply-highlight" : ""}`}
+                data-message-ids={groupMessageIds.join(" ")}
+                tabIndex={-1}
+              >
                 {!isMe && (
                   <div className="message-sender-column">
                     <img
@@ -231,6 +248,7 @@ function MessageList({
                       onClose={onCloseMessageActions}
                       canRecall={isMe}
                       canDeleteForMe
+                      onReplyMessage={onReplyMessage}
                       onCopyMessage={onCopyMessage}
                       onCopyImage={onCopyImage}
                       onDownloadImage={onDownloadImage}
@@ -242,6 +260,32 @@ function MessageList({
                     />
 
                     <div className={`message ${isMe ? "me" : "other"} ${messageType === "image" ? "image-message" : ""} ${isRecalled ? "message-recalled" : ""}`}>
+                      {replyPreview && (
+                        <button
+                          type="button"
+                          className="message-reply-preview message-reply-preview--clickable"
+                          onDoubleClick={(event) => {
+                            event.stopPropagation();
+                            onReplyPreviewDoubleClick?.(replyPreview);
+                          }}
+                          title="Double click to jump to original message"
+                        >
+                          <span className="message-reply-preview-indicator" aria-hidden="true" />
+                          <div className="message-reply-preview-body">
+                            <span className="message-reply-preview-sender">
+                              {replyPreview.senderName || "Unknown"}
+                            </span>
+                            <span className="message-reply-preview-content">
+                              {replyPreview.content || "Tin nhắn"}
+                            </span>
+                            {replyPreview.attachment?.name && (
+                              <span className="message-reply-preview-attachment">
+                                {replyPreview.attachment.name}
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      )}
                       {isRecalled ? (
                         <p>{latestMessage.text || "[Tin nhắn đã được thu hồi]"}</p>
                       ) : messageType === "image" ? (
@@ -295,6 +339,17 @@ function MessageList({
                               </button>
                             );
                           })}
+                        </div>
+                      ) : messageType === "voice" || messageType === "audio" ? (
+                        <div className="message-voice-list">
+                          {attachmentItems.map(({ message, attachmentUrl }, index) => (
+                            <VoiceMessagePlayer
+                              key={message.id || `${group.id}-voice-${index}`}
+                              message={message}
+                              fileUrl={attachmentUrl}
+                              onDownload={onDownloadFile}
+                            />
+                          ))}
                         </div>
                       ) : (
                         <p>{latestMessage.text}</p>

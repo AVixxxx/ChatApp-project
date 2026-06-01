@@ -27,6 +27,11 @@ function ChatWindow({
   isInitialMessagesLoading,
   newMessage,
   setNewMessage,
+  replyTarget,
+  onReplyMessage,
+  onClearReplyTarget,
+  highlightedMessageId,
+  onReplyPreviewDoubleClick,
   handleSendMessage,
   handleRecallMessage,
   handleRecallMessageGroup,
@@ -235,6 +240,9 @@ function ChatWindow({
         onRecallMessageGroup={handleRecallMessageGroup}
         onDeleteMessage={handleDeleteMessage}
         onDeleteMessageGroup={handleDeleteMessageGroup}
+        onReplyMessage={onReplyMessage}
+        highlightedMessageId={highlightedMessageId}
+        onReplyPreviewDoubleClick={onReplyPreviewDoubleClick}
       />
 
       <ImagePreviewModal
@@ -248,6 +256,8 @@ function ChatWindow({
       <MessageInput
         newMessage={newMessage}
         onChangeNewMessage={setNewMessage}
+        replyTarget={replyTarget}
+        onClearReplyTarget={onClearReplyTarget}
         onSendMessage={handleSendMessage}
       />
     </div>

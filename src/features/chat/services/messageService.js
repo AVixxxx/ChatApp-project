@@ -32,11 +32,9 @@ const normalizeMessage = (message) => {
         "";
 
   const hasFileUrl = Boolean(message.file_url || message.fileUrl);
-  const messageType =
-    message.messageType ||
-    message.message_type ||
-    message.type ||
-    (hasFileUrl ? "image" : "text");
+  const rawMessageType =
+    message.messageType || message.message_type || message.type || "";
+  const messageType = rawMessageType || (hasFileUrl ? "image" : "text");
 
   const imageUrl =
     message.imageUrl ||
@@ -77,7 +75,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const shouldRetryUploadRequest = (error) => {
   const status = error?.response?.status;
-  return error?.code === "ERR_NETWORK" || RETRYABLE_STATUSES.has(status);
+  return RETRYABLE_STATUSES.has(status);
 };
 
 const createMessageUploadFormData = (messageData) => {
@@ -86,11 +84,64 @@ const createMessageUploadFormData = (messageData) => {
   formData.append("content", messageData?.text || messageData?.content || "");
   formData.append("message_type", messageData?.messageType || "file");
 
+  const parentId = messageData?.parent_id || messageData?.parentId;
+  if (parentId) {
+    formData.append("parent_id", parentId);
+  }
+
   (Array.isArray(messageData?.files) ? messageData.files : []).forEach((file) => {
-    formData.append("files", file);
+    const safeFile = createSafeUploadFile(file);
+
+    formData.append("files", safeFile, safeFile.name);
   });
 
   return formData;
+};
+
+const sanitizeUploadFileName = (fileName) => {
+  const normalizedName = String(fileName || "").trim();
+
+  if (!normalizedName) {
+    return `upload-${Date.now()}`;
+  }
+
+  const lastDotIndex = normalizedName.lastIndexOf(".");
+  const hasExtension = lastDotIndex > 0 && lastDotIndex < normalizedName.length - 1;
+  const baseName = hasExtension ? normalizedName.slice(0, lastDotIndex) : normalizedName;
+  const extension = hasExtension ? normalizedName.slice(lastDotIndex + 1) : "";
+
+  const safeBaseName = baseName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_.]+|[-_.]+$/g, "")
+    .slice(0, 80);
+
+  const fallbackBaseName = safeBaseName || `upload-${Date.now()}`;
+  const safeExtension = extension
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "")
+    .slice(0, 10);
+
+  return safeExtension ? `${fallbackBaseName}.${safeExtension}` : fallbackBaseName;
+};
+
+const createSafeUploadFile = (file) => {
+  if (!(file instanceof File)) {
+    return file;
+  }
+
+  const safeName = sanitizeUploadFileName(file.name);
+  if (safeName === file.name) {
+    return file;
+  }
+
+  return new File([file], safeName, {
+    type: file.type,
+    lastModified: file.lastModified
+  });
 };
 
 const uploadMultipartMessage = async (messageData, maxAttemptsPerPath = 2) => {
@@ -105,12 +156,12 @@ const uploadMultipartMessage = async (messageData, maxAttemptsPerPath = 2) => {
           createMessageUploadFormData(messageData),
           {
             headers: {
-              ...getAuthHeaders(),
-              "Content-Type": "multipart/form-data"
+              ...getAuthHeaders()
             },
             maxBodyLength: Infinity,
             maxContentLength: Infinity,
-            timeout: 60000
+            timeout: 180000,
+            onUploadProgress: messageData?.onUploadProgress
           }
         );
       } catch (error) {
@@ -133,8 +184,14 @@ const uploadMultipartMessage = async (messageData, maxAttemptsPerPath = 2) => {
   }
 
   if (axios.isAxiosError(lastError) && !lastError.response) {
+    const uploadTimedOut =
+      lastError.code === "ECONNABORTED" ||
+      String(lastError.message || "").toLowerCase().includes("timeout");
+
     const wrappedError = new Error(
-      "Không thể tải file hoặc ảnh lên máy chủ. Kết nối đã bị ngắt trong lúc upload."
+      uploadTimedOut
+        ? "Tải file hoặc ảnh lên máy chủ quá lâu và đã bị hủy. Hãy thử lại hoặc dùng file nhỏ hơn 20MB."
+        : "Không thể tải file hoặc ảnh lên máy chủ. Kết nối đã bị ngắt trong lúc upload."
     );
     wrappedError.cause = lastError;
     throw wrappedError;
@@ -235,6 +292,7 @@ export const getAllMessagesByConversation = async (conversationId) => {
 export const sendMessage = async (messageData) => {
   const hasFiles = Array.isArray(messageData?.files) && messageData.files.length > 0;
   const messageType = messageData?.messageType || (hasFiles ? "image" : "text");
+  const parentId = messageData?.parent_id || messageData?.parentId;
 
   let response;
 
@@ -247,7 +305,8 @@ export const sendMessage = async (messageData) => {
     const payload = {
       conversation_id: messageData?.conversationId,
       content: messageData?.text,
-      message_type: messageType
+      message_type: messageType,
+      ...(parentId ? { parent_id: parentId } : {})
     };
 
     response = await chatApi.post(
@@ -326,6 +385,25 @@ export const sendFileMessage = async ({ conversationId, files = [] }) => {
       : [];
 
   return payload.map(normalizeMessage);
+};
+
+export const sendVoiceMessage = async ({ conversationId, file }) => {
+  if (!file) return null;
+
+  const response = await uploadMultipartMessage({
+    conversationId,
+    text: "",
+    files: [file],
+    messageType: "audio"
+  });
+
+  const payload = Array.isArray(response.data)
+    ? response.data
+    : response.data
+      ? [response.data]
+      : [];
+
+  return normalizeMessage(payload[0] || null);
 };
 
 export const deleteMessage = async (messageId) => {
