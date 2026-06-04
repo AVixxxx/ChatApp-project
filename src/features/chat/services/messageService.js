@@ -427,3 +427,23 @@ export const recallMessage = async (messageId) => {
 };
 
 export { normalizeMessage };
+
+export const searchMessages = async (conversationId, keyword) => {
+  if (!conversationId || !keyword || !String(keyword).trim()) return [];
+
+  const response = await chatApi.get(`/api/conversations/search`, {
+    ...getApiHeaders(),
+    params: {
+      conversationId,
+      keyword: String(keyword).trim()
+    }
+  });
+
+  const payload = Array.isArray(response.data)
+    ? response.data
+    : Array.isArray(response.data?.messages)
+      ? response.data.messages
+      : [];
+
+  return (payload || []).map(normalizeMessage);
+};

@@ -188,6 +188,22 @@ export const removeFriend = async (friendId) => {
   return response.data;
 };
 
+export const unfriendFriend = async (friendId) => {
+  const response = await axios.request({
+    method: "delete",
+    url: `${API_URL}/api/conversations/unfriend`,
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders()
+    },
+    data: {
+      friendId
+    }
+  });
+
+  return response.data;
+};
+
 export const sendFriendRequest = async (receiverId) => {
   const response = await axios.post(
     `${FRIENDS_API_URL}/request`,

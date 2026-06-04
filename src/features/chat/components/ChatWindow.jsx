@@ -1,8 +1,10 @@
-import { useState } from "react";
-import { FaPhone, FaVideo, FaInfoCircle } from "react-icons/fa";
+import { useEffect, useRef, useState } from "react";
+import { FaPhone, FaVideo, FaInfoCircle, FaSearch, FaTimes, FaSpinner } from "react-icons/fa";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import ImagePreviewModal from "./ImagePreviewModal";
+import ActionDialog from "./ActionDialog";
+import { searchMessages } from "@/features/chat/services/messageService";
 
 function ChatWindow({
   selectedConversation,
@@ -44,6 +46,14 @@ function ChatWindow({
   const [selectedImage, setSelectedImage] = useState(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [openMessageActionsId, setOpenMessageActionsId] = useState(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState(null);
+  const [dialogState, setDialogState] = useState(null);
+  const searchDebounceRef = useRef(null);
+  const searchAbortRef = useRef(null);
 
   const getMessageAttachmentUrl = (message) =>
     message?.imageUrl || message?.fileUrl || message?.file_url || "";
@@ -82,6 +92,15 @@ function ChatWindow({
   };
 
   const closeMessageActions = () => setOpenMessageActionsId(null);
+
+  const showAlertDialog = (message, options = {}) => {
+    setDialogState({
+      title: options.title || "Thông báo",
+      message,
+      tone: options.tone || "neutral",
+      confirmLabel: options.confirmLabel || "Đã hiểu"
+    });
+  };
 
   const copyTextMessage = async (message) => {
     const text = message?.text || "";
@@ -150,7 +169,79 @@ function ChatWindow({
       }
     } catch (error) {
       console.error("Failed to download attachment:", error);
-      alert("Khong the tai tep. Vui long thu lai sau.");
+      showAlertDialog("Khong the tai tep. Vui long thu lai sau.", {
+        title: "Không thể tải tệp",
+        tone: "danger"
+      });
+    }
+  };
+
+  useEffect(() => {
+    // Reset search when conversation changes
+    setIsSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setIsSearching(false);
+    setSearchError(null);
+
+    if (searchAbortRef.current) {
+      try {
+        searchAbortRef.current.abort();
+      } catch {
+        // ignore
+      }
+      searchAbortRef.current = null;
+    }
+  }, [selectedConversationId]);
+
+  const performSearch = (q) => {
+    if (searchDebounceRef.current) {
+      window.clearTimeout(searchDebounceRef.current);
+    }
+
+    searchDebounceRef.current = window.setTimeout(async () => {
+      const keyword = String(q || "").trim();
+      if (!keyword) {
+        setSearchResults([]);
+        setIsSearching(false);
+        setSearchError(null);
+        return;
+      }
+
+      setIsSearching(true);
+      setSearchError(null);
+
+      try {
+        const results = await searchMessages(selectedConversationId, keyword);
+        setSearchResults(Array.isArray(results) ? results : []);
+      } catch (err) {
+        console.error("Search messages failed:", err);
+        setSearchError("Lỗi khi tìm kiếm tin nhắn");
+        showAlertDialog("Lỗi khi tìm kiếm tin nhắn", {
+          title: "Lỗi tìm kiếm",
+          tone: "danger"
+        });
+      } finally {
+        setIsSearching(false);
+      }
+    }, 420);
+  };
+
+  const handleSearchInputChange = (value) => {
+    setSearchQuery(value);
+    performSearch(value);
+  };
+
+  const handleResultClick = (message) => {
+    setIsSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+
+    if (message && message.id) {
+      // reuse existing jump handler from parent
+      if (typeof onReplyPreviewDoubleClick === "function") {
+        onReplyPreviewDoubleClick({ id: message.id });
+      }
     }
   };
 
@@ -208,8 +299,69 @@ function ChatWindow({
           >
             <FaVideo className="header-action-icon" />
           </button>
+          <button
+            type="button"
+            className="header-action-btn"
+            onClick={() => setIsSearchOpen((v) => !v)}
+            title="Search messages"
+            aria-label="Search messages"
+          >
+            <FaSearch className="header-action-icon" />
+          </button>
         </div>
       </div>
+
+      {isSearchOpen && (
+        <div className="chat-search-panel">
+          <div className="chat-search-bar">
+            <input
+              type="text"
+              placeholder="Tìm kiếm tin nhắn..."
+              value={searchQuery}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
+              className="chat-search-input"
+            />
+            <button
+              type="button"
+              className="chat-search-close"
+              onClick={() => { setIsSearchOpen(false); setSearchQuery(""); setSearchResults([]); }}
+              aria-label="Close search"
+            >
+              <FaTimes />
+            </button>
+          </div>
+
+          <div className="chat-search-results">
+            {isSearching ? (
+              <div className="search-loading">Searching... <FaSpinner className="spin" /></div>
+            ) : searchError ? (
+              <div className="search-error">{searchError}</div>
+            ) : Array.isArray(searchResults) && searchResults.length === 0 && searchQuery.trim() !== "" ? (
+              <div className="search-empty">Không tìm thấy tin nhắn phù hợp</div>
+            ) : (
+              searchResults.map((result) => (
+                <button
+                  key={result.id || result.message_id || result._id}
+                  type="button"
+                  className="search-result-item"
+                  onClick={() => handleResultClick(result)}
+                >
+                  <div className="search-result-left">
+                    <img src={getMessageSenderAvatar(result)} alt="sender" className="search-result-avatar" />
+                  </div>
+                  <div className="search-result-body">
+                    <div className="search-result-top">
+                      <strong>{getMessageSenderName?.(result) || "Unknown"}</strong>
+                      <span className="search-result-time">{formatTime(result.createdAt)}</span>
+                    </div>
+                    <div className="search-result-preview">{String(result.text || "").slice(0, 160)}</div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="chat-date">Today</div>
 
@@ -259,6 +411,17 @@ function ChatWindow({
         replyTarget={replyTarget}
         onClearReplyTarget={onClearReplyTarget}
         onSendMessage={handleSendMessage}
+      />
+
+      <ActionDialog
+        isOpen={Boolean(dialogState)}
+        title={dialogState?.title}
+        message={dialogState?.message}
+        tone={dialogState?.tone || "neutral"}
+        confirmLabel={dialogState?.confirmLabel || "Đã hiểu"}
+        showCancel={false}
+        onConfirm={() => setDialogState(null)}
+        onCancel={() => setDialogState(null)}
       />
     </div>
   );

@@ -1,6 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  FaCompress,
   FaExclamationTriangle,
+  FaExpand,
   FaMicrophone,
   FaMicrophoneSlash,
   FaPhoneSlash,
@@ -52,7 +54,7 @@ function CallOverlay({
   activeCall,
   callPhase,
   localStream,
-  remoteParticipants,
+  remoteParticipants = [],
   errorMessage,
   isLocalAudioEnabled,
   isLocalVideoEnabled,
@@ -63,14 +65,54 @@ function CallOverlay({
   onToggleCamera,
   onDismissError
 }) {
+  const shellRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    handleFullscreenChange();
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
   if (!activeCall && !errorMessage) return null;
 
   const showIncomingActions = callPhase === "incoming" && activeCall;
   const showCallUi = Boolean(activeCall);
+  const videoCount = remoteParticipants.length + 1;
+
+  let layoutClass = "single";
+  if (videoCount === 2) layoutClass = "pair";
+  if (videoCount === 3) layoutClass = "triple";
+  if (videoCount > 3) layoutClass = "grid";
+
+  const toggleFullscreen = async () => {
+    const shell = shellRef.current;
+    if (!shell) return;
+
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      if (shell.requestFullscreen) {
+        await shell.requestFullscreen();
+      }
+    } catch {
+      // Ignore fullscreen failures and keep the modal usable.
+    }
+  };
 
   return (
     <div className="call-overlay">
-      <div className="call-shell">
+      <div ref={shellRef} className={`call-shell ${isFullscreen ? "is-fullscreen" : ""}`}>
         {errorMessage ? (
           <div className="call-error-banner">
             <div className="call-error-copy">
@@ -101,16 +143,16 @@ function CallOverlay({
 
               <div className="call-summary-pill">
                 <FaUserFriends />
-                <span>{remoteParticipants.length + 1} người</span>
+                <span>{videoCount} người</span>
               </div>
             </div>
 
-            <div className="call-grid">
+            <div className={`call-grid ${layoutClass}`}>
               <VideoTile
                 label="Bạn"
                 stream={localStream}
                 muted
-                status={isLocalAudioEnabled ? "Micro đang bật" : "Micro đang tắt"}
+                status={isLocalAudioEnabled ? "Mic đang bật" : "Mic đang tắt"}
                 isLocal
                 isVideoEnabled={isLocalVideoEnabled}
               />
@@ -120,13 +162,23 @@ function CallOverlay({
                   key={participant.userId}
                   label={participant.name || participant.userId}
                   stream={participant.stream}
-                  status={participant.status || "invited"}
+                  status={participant.status || "Đang chờ"}
                   isVideoEnabled={participant.isVideoEnabled}
                 />
               ))}
             </div>
 
             <div className="call-controls">
+              <button
+                type="button"
+                className="call-control-btn fullscreen"
+                onClick={toggleFullscreen}
+                aria-pressed={isFullscreen}
+              >
+                {isFullscreen ? <FaCompress /> : <FaExpand />}
+                <span>{isFullscreen ? "Thoát fullscreen" : "Fullscreen"}</span>
+              </button>
+
               {showIncomingActions ? (
                 <>
                   <button type="button" className="call-control-btn accept" onClick={onAccept}>

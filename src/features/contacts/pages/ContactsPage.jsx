@@ -12,7 +12,7 @@ import {
   declineFriendRequest,
   getFriendList,
   getFriendRequests,
-  removeFriend
+  unfriendFriend
 } from "@/features/contacts/services/friendService";
 import { getMe } from "@/features/profile/services/userService";
 import {
@@ -114,6 +114,7 @@ function ContactsPage() {
   const [sortType, setSortType] = useState("asc");
   const [filterType, setFilterType] = useState("all");
   const [selectedContact, setSelectedContact] = useState(null);
+  const [selectedContactAction, setSelectedContactAction] = useState("view");
   const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
   const [isContactsLoading, setIsContactsLoading] = useState(
     () => !(cachedContactsState?.contacts?.length > 0)
@@ -341,12 +342,27 @@ function ContactsPage() {
   };
 
   const handleRemoveFriend = async (contact) => {
-    try {
-      const relationId = contact.relationId || contact.id;
-      await removeFriend(relationId);
-      setContacts((prev) => prev.filter((item) => item.id !== contact.id));
-    } catch (error) {
-      console.error("Failed to remove friend:", error);
+    setSelectedContact(contact || null);
+    setSelectedContactAction("unfriend");
+    setShowFriendProfileModal(true);
+  };
+
+  const handleConfirmUnfriend = async (contact) => {
+    const friendId = String(contact?.id || "");
+
+    if (!friendId) {
+      throw new Error("Missing friend id");
+    }
+
+    await unfriendFriend(friendId);
+
+    setContacts((prev) => prev.filter((item) => String(item.id) !== friendId));
+    setRequests((prev) => prev.filter((item) => String(item.id) !== friendId));
+
+    if (String(selectedContact?.id || "") === friendId) {
+      setSelectedContact(null);
+      setShowFriendProfileModal(false);
+      setSelectedContactAction("view");
     }
   };
 
@@ -369,12 +385,14 @@ function ContactsPage() {
 
   const handleViewProfile = (contact) => {
     setSelectedContact(contact || null);
+    setSelectedContactAction("view");
     setShowFriendProfileModal(true);
   };
 
   const handleCloseFriendProfileModal = () => {
     setShowFriendProfileModal(false);
     setSelectedContact(null);
+    setSelectedContactAction("view");
   };
 
   const renderMainContent = () => {
@@ -445,6 +463,8 @@ function ContactsPage() {
         isOpen={showFriendProfileModal}
         contact={selectedContact}
         onClose={handleCloseFriendProfileModal}
+        onUnfriend={handleConfirmUnfriend}
+        initialAction={selectedContactAction}
       />
     </div>
   );

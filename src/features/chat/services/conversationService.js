@@ -61,7 +61,13 @@ const normalizeConversation = (conversation) => {
       conversation.updatedAt ||
       conversation.updated_at ||
       lastMessage?.createdAt ||
-      lastMessage?.created_at
+      lastMessage?.created_at,
+    isPinned: Boolean(conversation.isPinned ?? conversation.is_pinned ?? false),
+    is_pinned: Boolean(conversation.isPinned ?? conversation.is_pinned ?? false),
+    pinnedAt:
+      conversation.pinnedAt || conversation.pinned_at || conversation.pin_time || null,
+    pinned_at:
+      conversation.pinnedAt || conversation.pinned_at || conversation.pin_time || null
   };
 };
 
@@ -183,12 +189,12 @@ export const leaveGroupConversation = async (conversationId, currentUserId) => {
   return response.data;
 };
 
-export const setGroupAdmin = async (conversationId, targetUserId) => {
+export const transferAdminRole = async (conversationId, newAdminId) => {
   const response = await chatApi.put(
-    `${CONVERSATION_API_PATH}/group/set-admin`,
+    `${CONVERSATION_API_PATH}/transfer-admin`,
     {
-      conversation_id: conversationId,
-      targetUserId
+      conversationId,
+      newAdminId
     },
     {
       headers: { ...getAuthHeaders() }
@@ -220,5 +226,20 @@ export const updateGroupInfo = async (conversationId, { name, avatarFile } = {})
     formData,
     { headers: { ...getAuthHeaders() } }
   );
+  return response.data;
+};
+
+export const togglePinConversation = async ({ conversationId, isPinned }) => {
+  const response = await chatApi.get(
+    `${CONVERSATION_API_PATH}/toggle-pin`,
+    {
+      headers: { ...getAuthHeaders() },
+      params: {
+        conversationId,
+        isPinned
+      }
+    }
+  );
+
   return response.data;
 };

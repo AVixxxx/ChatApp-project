@@ -1,4 +1,4 @@
-import { FaSearch, FaUserPlus, FaUsers } from "react-icons/fa";
+import { FaSearch, FaUserPlus, FaUsers, FaThumbtack, FaSpinner } from "react-icons/fa";
 
 function ConversationList({
   searchTerm,
@@ -15,7 +15,9 @@ function ConversationList({
   getUnreadCount,
   formatConversationTime,
   getConversationPreview,
-  onAvatarClick
+  onAvatarClick,
+  onTogglePinConversation,
+  pinActionLoadingByConversationId
 }) {
   return (
     <div className="conversation-list">
@@ -55,6 +57,8 @@ function ConversationList({
       ) : (
         filteredConversations.map((conversation) => {
           const unreadCount = Number(getUnreadCount?.(conversation) || 0);
+          const isPinned = Boolean(conversation?.isPinned ?? conversation?.is_pinned ?? false);
+          const pinLoading = Boolean(pinActionLoadingByConversationId?.[conversation?.id]);
 
           return (
             <div
@@ -77,7 +81,21 @@ function ConversationList({
             </button>
             <div className="conversation-content">
               <div className="conversation-top">
-                <h4>{getConversationDisplayName(conversation)}</h4>
+                <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                  <h4>{getConversationDisplayName(conversation)}</h4>
+                  <button
+                    type="button"
+                    className={`conversation-pin-btn ${isPinned ? "pinned" : ""}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onTogglePinConversation?.(conversation);
+                    }}
+                    title={isPinned ? "Unpin conversation" : "Pin conversation"}
+                    aria-label={isPinned ? "Unpin conversation" : "Pin conversation"}
+                  >
+                    {pinLoading ? <FaSpinner className="spin" /> : <FaThumbtack />}
+                  </button>
+                </div>
                 <div className="conversation-meta">
                   <span className="conversation-time">
                     {formatConversationTime(conversation.lastMessageTime)}

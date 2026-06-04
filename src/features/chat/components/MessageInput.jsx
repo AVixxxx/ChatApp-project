@@ -11,6 +11,7 @@ import {
 } from "react-icons/fa";
 import EmojiPicker from "./EmojiPicker";
 import VoiceRecorder from "./VoiceRecorder";
+import ActionDialog from "./ActionDialog";
 
 const MAX_ATTACHMENT_SIZE_BYTES = 20 * 1024 * 1024;
 const SUPPORTED_VOICE_MIME_TYPES = new Set(["audio/m4a", "audio/mpeg"]);
@@ -64,6 +65,7 @@ function MessageInput({
   const [sendProgress, setSendProgress] = useState(0);
   const [sendFeedback, setSendFeedback] = useState(null);
   const [voiceRecorderResetKey, setVoiceRecorderResetKey] = useState(0);
+  const [dialogState, setDialogState] = useState(null);
   const inputRef = useRef(null);
   const imageInputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -227,6 +229,15 @@ function MessageInput({
     setSendProgress(nextProgress);
   };
 
+  const showAlertDialog = (message, options = {}) => {
+    setDialogState({
+      title: options.title || "Thông báo",
+      message,
+      tone: options.tone || "neutral",
+      confirmLabel: options.confirmLabel || "Đã hiểu"
+    });
+  };
+
   const removeDraftAttachment = useCallback((attachmentId) => {
     setDraftAttachments((currentAttachments) => {
       const nextAttachments = currentAttachments.filter((attachment) => {
@@ -301,7 +312,10 @@ function MessageInput({
     const { acceptedFiles, rejectedFiles } = splitAcceptedAttachments(selectedFiles);
 
     if (rejectedFiles.length > 0) {
-      alert("Chỉ có thể tải lên file hoặc ảnh nhỏ hơn 20MB.");
+      showAlertDialog("Chỉ có thể tải lên file hoặc ảnh nhỏ hơn 20MB.", {
+        title: "Kích thước file không hợp lệ",
+        tone: "warning"
+      });
     }
 
     if (acceptedFiles.length > 0) {
@@ -319,7 +333,10 @@ function MessageInput({
     const { acceptedFiles, rejectedFiles } = splitAcceptedAttachments(selectedFiles);
 
     if (rejectedFiles.length > 0) {
-      alert("Chỉ có thể tải lên file hoặc ảnh nhỏ hơn 20MB.");
+      showAlertDialog("Chỉ có thể tải lên file hoặc ảnh nhỏ hơn 20MB.", {
+        title: "Kích thước file không hợp lệ",
+        tone: "warning"
+      });
     }
 
     if (acceptedFiles.length > 0) {
@@ -384,6 +401,17 @@ function MessageInput({
           onClose={() => setIsEmojiPickerOpen(false)}
         />
       )}
+
+      <ActionDialog
+        isOpen={Boolean(dialogState)}
+        title={dialogState?.title}
+        message={dialogState?.message}
+        tone={dialogState?.tone || "neutral"}
+        confirmLabel={dialogState?.confirmLabel || "Đã hiểu"}
+        showCancel={false}
+        onConfirm={() => setDialogState(null)}
+        onCancel={() => setDialogState(null)}
+      />
 
       {draftAttachments.length > 0 && (
         <div className="chat-input-preview-row" aria-label="File previews">

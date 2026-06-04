@@ -10,6 +10,7 @@
 }
 
 .friend-profile-modal {
+  position: relative;
   width: min(100%, 540px);
   background: #f6f7fa;
   border-radius: 18px;
@@ -107,4 +108,125 @@
   font-size: 15px;
   color: #111827;
   font-weight: 600;
+}
+
+.friend-profile-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 16px;
+}
+
+.friend-profile-danger-btn {
+  border: none;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.friend-profile-confirm-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.friend-profile-confirm-dialog {
+  width: min(100%, 360px);
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.2);
+}
+
+.friend-profile-confirm-dialog h4 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  color: #111827;
+}
+
+.friend-profile-confirm-dialog p {
+  margin: 0;
+  font-size: 14px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.friend-profile-confirm-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.friend-profile-cancel-btn,
+.friend-profile-confirm-btn {
+  border: none;
+  border-radius: 10px;
+  min-width: 110px;
+  height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.friend-profile-cancel-btn {
+  background: #e5e7eb;
+  color: #334155;
+}
+
+.friend-profile-confirm-btn {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.friend-profile-confirm-btn:disabled,
+.friend-profile-cancel-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.friend-profile-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.18);
+}
+
+.friend-profile-toast.is-success {
+  background: #16a34a;
+}
+
+.friend-profile-toast.is-error {
+  background: #dc2626;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

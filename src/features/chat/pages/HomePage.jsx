@@ -10,9 +10,10 @@ import {
   addMemberToGroup,
   removeMemberFromGroup,
   leaveGroupConversation,
-  setGroupAdmin,
+  transferAdminRole,
   deleteGroupConversation,
-  updateGroupInfo
+  updateGroupInfo,
+  togglePinConversation as togglePinConversationApi
 } from "@/features/chat/services/conversationService";
 import {
   getMessagesPage,
@@ -22,7 +23,7 @@ import {
   normalizeMessage
 } from "@/features/chat/services/messageService";
 import { findAccount } from "@/features/auth/services/authService";
-import { sendFriendRequest } from "@/features/contacts/services/friendService";
+import { sendFriendRequest, unfriendFriend } from "@/features/contacts/services/friendService";
 import { getMe, getFriends } from "@/features/profile/services/userService";
 import {
   getAvatarUrl,
@@ -47,6 +48,7 @@ import FriendProfileModal from "@/features/contacts/components/FriendProfileModa
 import CallOverlay from "@/features/chat/components/CallOverlay";
 import { useGroupCall } from "@/features/chat/hooks/useGroupCall";
 import CallParticipantModal from "@/features/chat/components/CallParticipantModal";
+import ActionDialog from "@/features/chat/components/ActionDialog";
 
 const getEntityId = (entity) => {
   if (!entity || typeof entity !== "object") return null;
@@ -227,7 +229,9 @@ function HomePage() {
   const [isTransferringAdmin, setIsTransferringAdmin] = useState(false);
   const [isDissolvingGroup, setIsDissolvingGroup] = useState(false);
   const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
+  const [dialogState, setDialogState] = useState(null);
   const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
+  const [selectedFriendProfileAction, setSelectedFriendProfileAction] = useState("view");
   const [currentConversation, setCurrentConversation] = useState(null);
   const [unreadCountByConversationId, setUnreadCountByConversationId] = useState({});
   const [isCallParticipantModalOpen, setIsCallParticipantModalOpen] = useState(false);
@@ -235,6 +239,8 @@ function HomePage() {
   const [pendingCallMode, setPendingCallMode] = useState("video");
   const [callParticipantError, setCallParticipantError] = useState("");
   const [isStartingSelectedCall, setIsStartingSelectedCall] = useState(false);
+  const [pinActionLoadingByConversationId, setPinActionLoadingByConversationId] = useState({});
+  const [pinToast, setPinToast] = useState(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState(null);
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -244,6 +250,7 @@ function HomePage() {
   const isLoadingOlderMessagesRef = useRef(false);
   const failedOlderMessagesCursorRef = useRef(null);
   const replyHighlightTimeoutRef = useRef(null);
+  const pinToastTimeoutRef = useRef(null);
   const [messagePageCursor, setMessagePageCursor] = useState(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [isInitialMessagesLoading, setIsInitialMessagesLoading] = useState(false);
@@ -298,6 +305,70 @@ function HomePage() {
 
     const parsed = new Date(rawValue).getTime();
     return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const isConversationPinned = (conversation) =>
+    Boolean(conversation?.isPinned ?? conversation?.is_pinned ?? false);
+
+  const getConversationPinnedSortTime = (conversation) => {
+    const rawValue =
+      conversation?.pinnedAt ||
+      conversation?.pinned_at ||
+      conversation?.pin_time ||
+      0;
+
+    const parsed = new Date(rawValue).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const sortConversationsByPinAndActivity = (conversationList = []) => {
+    return [...conversationList].sort((firstConversation, secondConversation) => {
+      const firstPinned = isConversationPinned(firstConversation);
+      const secondPinned = isConversationPinned(secondConversation);
+
+      if (firstPinned && !secondPinned) return -1;
+      if (!firstPinned && secondPinned) return 1;
+
+      if (firstPinned && secondPinned) {
+        const pinnedDelta =
+          getConversationPinnedSortTime(secondConversation) -
+          getConversationPinnedSortTime(firstConversation);
+
+        if (pinnedDelta !== 0) return pinnedDelta;
+      }
+
+      return (
+        getConversationSortTime(secondConversation) -
+        getConversationSortTime(firstConversation)
+      );
+    });
+  };
+
+  const applyConversationPinState = (
+    conversationList = [],
+    conversationId,
+    isPinned,
+    pinnedAt
+  ) => {
+    const normalizedConversationId = getSafeId(conversationId);
+
+    return (Array.isArray(conversationList) ? conversationList : []).map((conversation) => {
+      if (getSafeId(conversation?.id) !== normalizedConversationId) {
+        return conversation;
+      }
+
+      const normalizedPinnedAt = isPinned
+        ? pinnedAt || new Date().toISOString()
+        : null;
+
+      return {
+        ...conversation,
+        isPinned: Boolean(isPinned),
+        is_pinned: Boolean(isPinned),
+        pinnedAt: normalizedPinnedAt,
+        pinned_at: normalizedPinnedAt
+      };
+    });
   };
 
   const getConversationPreview = (conversation) => {
@@ -388,6 +459,51 @@ function HomePage() {
     } catch (error) {
       console.error("Failed to load group members:", error);
     }
+  };
+
+  const applyTransferredAdminState = (conversation, oldAdminId, newAdminId) => {
+    if (!conversation) return conversation;
+
+    const safeOldAdminId = String(oldAdminId || "");
+    const safeNewAdminId = String(newAdminId || "");
+
+    if (!safeNewAdminId) {
+      return conversation;
+    }
+
+    const nextMembers = Array.isArray(conversation.members)
+      ? conversation.members.map((member) => {
+          const memberId = String(getUserId(member) || "");
+          if (!memberId) return member;
+
+          if (memberId === safeNewAdminId) {
+            return {
+              ...member,
+              role: "admin"
+            };
+          }
+
+          if (!safeOldAdminId || memberId === safeOldAdminId) {
+            return {
+              ...member,
+              role: "member"
+            };
+          }
+
+          return member;
+        })
+      : conversation.members;
+
+    const nextGroupAdmin =
+      nextMembers?.find(
+        (member) => String(getUserId(member) || "") === safeNewAdminId
+      ) || conversation.groupAdmin;
+
+    return {
+      ...conversation,
+      members: nextMembers,
+      groupAdmin: nextGroupAdmin
+    };
   };
 
   const mergeConversationsWithFriends = (conversationList, friendList) => {
@@ -535,13 +651,7 @@ function HomePage() {
           : conversation
       );
 
-      updated.sort(
-        (a, b) =>
-          new Date(b.updatedAt || b.lastMessageTime || 0) -
-          new Date(a.updatedAt || a.lastMessageTime || 0)
-      );
-
-      return [...updated];
+      return sortConversationsByPinAndActivity(updated);
     });
   };
 
@@ -709,6 +819,67 @@ function HomePage() {
     }
 
     return fallbackMessage;
+  };
+
+  const showPinToast = (type, message) => {
+    setPinToast({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      message
+    });
+
+    if (pinToastTimeoutRef.current) {
+      window.clearTimeout(pinToastTimeoutRef.current);
+    }
+
+    pinToastTimeoutRef.current = window.setTimeout(() => {
+      setPinToast(null);
+      pinToastTimeoutRef.current = null;
+    }, 2600);
+  };
+
+  const handleTogglePinConversation = async (conversation) => {
+    const conversationId = getSafeId(conversation?.id);
+    if (!conversationId || conversation?.isVirtual) return;
+
+    if (pinActionLoadingByConversationId[conversationId]) {
+      return;
+    }
+
+    const wasPinned = isConversationPinned(conversation);
+    const previousPinnedAt = conversation?.pinnedAt || conversation?.pinned_at || null;
+    const nextPinned = !wasPinned;
+    const optimisticPinnedAt = nextPinned ? new Date().toISOString() : null;
+
+    setPinActionLoadingByConversationId((prev) => ({
+      ...prev,
+      [conversationId]: true
+    }));
+
+    setConversations((prev) =>
+      applyConversationPinState(prev, conversationId, nextPinned, optimisticPinnedAt)
+    );
+
+    try {
+      await togglePinConversationApi({
+        conversationId,
+        isPinned: nextPinned
+      });
+
+      showPinToast("success", nextPinned ? "Da ghim cuoc tro chuyen" : "Da bo ghim cuoc tro chuyen");
+    } catch (error) {
+      setConversations((prev) =>
+        applyConversationPinState(prev, conversationId, wasPinned, previousPinnedAt)
+      );
+
+      showPinToast("error", getApiErrorMessage(error, "Khong the cap nhat trang thai ghim luc nay"));
+    } finally {
+      setPinActionLoadingByConversationId((prev) => {
+        const nextState = { ...prev };
+        delete nextState[conversationId];
+        return nextState;
+      });
+    }
   };
 
   const getGroupParticipantDisplayName = (targetUserId, conversationId) => {
@@ -947,6 +1118,41 @@ function HomePage() {
     setGroupModalError("");
   };
 
+  const closeActionDialog = () => {
+    setDialogState(null);
+  };
+
+  const showAlertDialog = (message, options = {}) => {
+    setDialogState({
+      type: "alert",
+      title: options.title || "Thông báo",
+      message,
+      tone: options.tone || "neutral",
+      confirmLabel: options.confirmLabel || "Đã hiểu"
+    });
+  };
+
+  const showConfirmDialog = ({ title, message, confirmLabel, cancelLabel, tone }) => {
+    return new Promise((resolve) => {
+      setDialogState({
+        type: "confirm",
+        title,
+        message,
+        tone: tone || "danger",
+        confirmLabel: confirmLabel || "Xác nhận",
+        cancelLabel: cancelLabel || "Hủy",
+        onConfirm: () => {
+          closeActionDialog();
+          resolve(true);
+        },
+        onCancel: () => {
+          closeActionDialog();
+          resolve(false);
+        }
+      });
+    });
+  };
+
   const toggleGroupMember = (userId) => {
     setGroupModalError("");
     setSelectedGroupMembers((prev) =>
@@ -1015,62 +1221,52 @@ function HomePage() {
 
   const handleTransferGroupAdmin = async (targetUserId) => {
     const conversationId = currentConversation?.id;
+    const currentAdminId = String(user?.id || "");
     const normalizedTargetUserId = String(targetUserId || "");
 
-    if (!conversationId || !normalizedTargetUserId) return;
+    if (!conversationId || !currentAdminId || !normalizedTargetUserId) return;
 
     const targetMember = (currentConversation?.members || []).find(
       (member) => String(getUserId(member) || "") === normalizedTargetUserId
     );
     const targetDisplayName = getUserDisplayName(targetMember);
 
-    const isConfirmed = window.confirm(
-      `Bạn có chắc muốn trao quyền admin cho ${targetDisplayName}?`
-    );
+    const isConfirmed = await showConfirmDialog({
+      title: "Trao quyền admin",
+      message: `Bạn có chắc muốn trao quyền admin cho ${targetDisplayName}?`,
+      confirmLabel: "Trao quyền",
+      cancelLabel: "Hủy",
+      tone: "warning"
+    });
 
     if (!isConfirmed) return;
 
     setIsTransferringAdmin(true);
 
     try {
-      await setGroupAdmin(conversationId, normalizedTargetUserId);
       setConversations((prev) =>
-        prev.map((conversation) => {
-          if (String(conversation.id) !== String(conversationId)) {
-            return conversation;
-          }
-
-          const nextMembers = Array.isArray(conversation.members)
-            ? conversation.members.map((member) => {
-                const memberId = String(getUserId(member) || "");
-                if (!memberId) return member;
-
-                return {
-                  ...member,
-                  role: memberId === normalizedTargetUserId ? "admin" : "member"
-                };
-              })
-            : conversation.members;
-
-          const nextGroupAdmin =
-            nextMembers?.find(
-              (member) => String(getUserId(member) || "") === normalizedTargetUserId
-            ) || targetMember || null;
-
-          return {
-            ...conversation,
-            members: nextMembers,
-            groupAdmin: nextGroupAdmin
-          };
-        })
+        prev.map((conversation) =>
+          String(conversation.id) === String(conversationId)
+            ? applyTransferredAdminState(
+                conversation,
+                currentAdminId,
+                normalizedTargetUserId
+              )
+            : conversation
+        )
       );
+      await transferAdminRole(conversationId, normalizedTargetUserId);
+      await hydrateGroupConversationMembers(conversationId);
     } catch (error) {
-      alert(getApiErrorMessage(error, "Không thể chuyển quyền admin lúc này."));
+      await hydrateGroupConversationMembers(conversationId);
+      showAlertDialog(getApiErrorMessage(error, "Could not transfer admin role right now."), {
+        title: "Transfer failed",
+        tone: "danger"
+      });
     } finally {
       setIsTransferringAdmin(false);
     }
   };
-
   const handleLeaveGroup = async () => {
     const conversationId = currentConversation?.id;
     const currentUserId = user?.id;
@@ -1091,11 +1287,20 @@ function HomePage() {
       isCurrentUserAdminByConversation ||
       (!hasConversationAdmin && isCurrentUserAdminByRole)
     ) {
-      alert("Bạn đang là admin. Hãy chuyển quyền admin trước khi rời nhóm.");
+      showAlertDialog("Bạn đang là admin. Hãy chuyển quyền admin trước khi rời nhóm.", {
+        title: "Không thể rời nhóm",
+        tone: "warning"
+      });
       return;
     }
 
-    const isConfirmed = window.confirm("Bạn có chắc muốn rời nhóm này?");
+    const isConfirmed = await showConfirmDialog({
+      title: "Rời nhóm",
+      message: "Bạn có chắc muốn rời nhóm này?",
+      confirmLabel: "Rời nhóm",
+      cancelLabel: "Hủy",
+      tone: "warning"
+    });
     if (!isConfirmed) return;
 
     setIsLeavingGroup(true);
@@ -1115,7 +1320,10 @@ function HomePage() {
         return next;
       });
     } catch (error) {
-      alert(getApiErrorMessage(error, "Không thể rời nhóm lúc này."));
+      showAlertDialog(getApiErrorMessage(error, "Không thể rời nhóm lúc này."), {
+        title: "Không thể rời nhóm",
+        tone: "danger"
+      });
     } finally {
       setIsLeavingGroup(false);
     }
@@ -1142,13 +1350,20 @@ function HomePage() {
       (!hasConversationAdmin && isCurrentUserAdminByRole);
 
     if (!isCurrentUserAdmin) {
-      alert("Chỉ admin mới có quyền giải tán nhóm.");
+      showAlertDialog("Chỉ admin mới có quyền giải tán nhóm.", {
+        title: "Không có quyền",
+        tone: "warning"
+      });
       return;
     }
 
-    const isConfirmed = window.confirm(
-      "Bạn có chắc muốn giải tán nhóm này? Hành động này không thể hoàn tác."
-    );
+    const isConfirmed = await showConfirmDialog({
+      title: "Giải tán nhóm",
+      message: "Bạn có chắc muốn giải tán nhóm này? Hành động này không thể hoàn tác.",
+      confirmLabel: "Giải tán",
+      cancelLabel: "Hủy",
+      tone: "danger"
+    });
 
     if (!isConfirmed) return;
 
@@ -1169,7 +1384,10 @@ function HomePage() {
         return next;
       });
     } catch (error) {
-      alert(getApiErrorMessage(error, "Không thể giải tán nhóm lúc này."));
+      showAlertDialog(getApiErrorMessage(error, "Không thể giải tán nhóm lúc này."), {
+        title: "Không thể giải tán nhóm",
+        tone: "danger"
+      });
     } finally {
       setIsDissolvingGroup(false);
     }
@@ -1524,6 +1742,26 @@ function HomePage() {
     };
   }, [socketClient]);
 
+  useEffect(() => {
+    const handleConversationPinned = (payload) => {
+      const conversationId = getSafeId(payload?.conversationId || payload?.conversation_id);
+      if (!conversationId) return;
+
+      const isPinned = Boolean(payload?.isPinned ?? payload?.is_pinned);
+      const pinnedAt = payload?.pinnedAt || payload?.pinned_at || null;
+
+      setConversations((prev) =>
+        applyConversationPinState(prev, conversationId, isPinned, pinnedAt)
+      );
+    };
+
+    socketClient.on("conversation_pinned", handleConversationPinned);
+
+    return () => {
+      socketClient.off("conversation_pinned", handleConversationPinned);
+    };
+  }, [socketClient]);
+
   // Group event listeners
   useEffect(() => {
     if (!socketClient) return;
@@ -1626,37 +1864,22 @@ function HomePage() {
       );
     };
 
-    const handleNewAdminAssigned = ({ conversation_id, newAdminId }) => {
-      if (!conversation_id || !newAdminId) return;
+    const handleAdminTransferred = (payload) => {
+      const conversationId = payload?.conversationId || payload?.conversation_id;
+      const oldAdminId = payload?.oldAdminId || payload?.old_admin_id;
+      const newAdminId = payload?.newAdminId || payload?.new_admin_id;
+
+      if (!conversationId || !newAdminId) return;
 
       setConversations((prev) =>
-        prev.map((conv) => {
-          if (String(conv.id) !== String(conversation_id)) return conv;
-
-          const nextMembers = Array.isArray(conv.members)
-            ? conv.members.map((member) => {
-                const memberId = String(getUserId(member) || "");
-                if (!memberId) return member;
-
-                return {
-                  ...member,
-                  role: memberId === String(newAdminId) ? "admin" : "member"
-                };
-              })
-            : conv.members;
-
-          const nextGroupAdmin =
-            nextMembers?.find(
-              (member) => String(getUserId(member) || "") === String(newAdminId)
-            ) || conv.groupAdmin;
-
-          return {
-            ...conv,
-            members: nextMembers,
-            groupAdmin: nextGroupAdmin
-          };
-        })
+        prev.map((conv) =>
+          String(conv.id) === String(conversationId)
+            ? applyTransferredAdminState(conv, oldAdminId, newAdminId)
+            : conv
+        )
       );
+
+      hydrateGroupConversationMembers(conversationId);
     };
 
     socketClient.on("group_updated", handleGroupUpdated);
@@ -1665,7 +1888,7 @@ function HomePage() {
     socketClient.on("you_are_kicked", handleYouAreKicked);
     socketClient.on("added_to_group", handleAddedToGroup);
     socketClient.on("group_dissolved", handleGroupDissolved);
-    socketClient.on("new_admin_assigned", handleNewAdminAssigned);
+    socketClient.on("admin_transferred", handleAdminTransferred);
 
     return () => {
       socketClient.off("group_updated", handleGroupUpdated);
@@ -1674,7 +1897,7 @@ function HomePage() {
       socketClient.off("you_are_kicked", handleYouAreKicked);
       socketClient.off("added_to_group", handleAddedToGroup);
       socketClient.off("group_dissolved", handleGroupDissolved);
-      socketClient.off("new_admin_assigned", handleNewAdminAssigned);
+      socketClient.off("admin_transferred", handleAdminTransferred);
     };
   }, [
     allUsers,
@@ -1699,6 +1922,15 @@ function HomePage() {
       clearReplyHighlight();
     };
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (pinToastTimeoutRef.current) {
+        window.clearTimeout(pinToastTimeoutRef.current);
+        pinToastTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSendMessage = async (payload = {}) => {
     const messageText = String(payload?.text ?? newMessage ?? "").trim();
@@ -1727,7 +1959,10 @@ function HomePage() {
       );
 
       if (hasVoiceAttachment && hasNonVoiceAttachment) {
-        alert("Chua ho tro gui cung luc voice voi file/anh. Vui long gui rieng.");
+        showAlertDialog("Chua ho tro gui cung luc voice voi file/anh. Vui long gui rieng.", {
+          title: "Không hỗ trợ",
+          tone: "warning"
+        });
         return;
       }
 
@@ -1774,7 +2009,13 @@ function HomePage() {
     const messageId = getEntityId(message);
     if (!messageId) return;
 
-    const isConfirmed = window.confirm("Thu hồi tin nhắn này?");
+    const isConfirmed = await showConfirmDialog({
+      title: "Thu hồi tin nhắn",
+      message: "Thu hồi tin nhắn này?",
+      confirmLabel: "Thu hồi",
+      cancelLabel: "Hủy",
+      tone: "warning"
+    });
     if (!isConfirmed) return;
 
     try {
@@ -1782,7 +2023,10 @@ function HomePage() {
       markMessagesAsRecalled([messageId]);
     } catch (error) {
       console.error("Failed to recall message:", error);
-      alert(getApiErrorMessage(error, "Không thể thu hồi tin nhắn lúc này."));
+      showAlertDialog(getApiErrorMessage(error, "Không thể thu hồi tin nhắn lúc này."), {
+        title: "Không thể thu hồi",
+        tone: "danger"
+      });
     }
   };
 
@@ -1797,9 +2041,13 @@ function HomePage() {
 
     if (targetIds.length === 0) return;
 
-    const isConfirmed = window.confirm(
-      `Thu hồi ${targetIds.length} tin nhắn này?`
-    );
+    const isConfirmed = await showConfirmDialog({
+      title: "Thu hồi nhiều tin nhắn",
+      message: `Thu hồi ${targetIds.length} tin nhắn này?`,
+      confirmLabel: "Thu hồi",
+      cancelLabel: "Hủy",
+      tone: "warning"
+    });
     if (!isConfirmed) return;
 
     try {
@@ -1816,11 +2064,17 @@ function HomePage() {
       }
 
       if (succeededIds.length !== targetIds.length) {
-        alert("Một số tin nhắn chưa thu hồi được.");
+        showAlertDialog("Một số tin nhắn chưa thu hồi được.", {
+          title: "Thông báo",
+          tone: "warning"
+        });
       }
     } catch (error) {
       console.error("Failed to recall grouped messages:", error);
-      alert(getApiErrorMessage(error, "Không thể thu hồi các tin nhắn này."));
+      showAlertDialog(getApiErrorMessage(error, "Không thể thu hồi các tin nhắn này."), {
+        title: "Không thể thu hồi",
+        tone: "danger"
+      });
     }
   };
 
@@ -1828,7 +2082,13 @@ function HomePage() {
     const messageId = getEntityId(message);
     if (!messageId) return;
 
-    const isConfirmed = window.confirm("Xóa tin nhắn này khỏi phía bạn?");
+    const isConfirmed = await showConfirmDialog({
+      title: "Xóa tin nhắn",
+      message: "Xóa tin nhắn này khỏi phía bạn?",
+      confirmLabel: "Xóa",
+      cancelLabel: "Hủy",
+      tone: "danger"
+    });
     if (!isConfirmed) return;
 
     try {
@@ -1836,7 +2096,10 @@ function HomePage() {
       removeMessagesByIds([messageId]);
     } catch (error) {
       console.error("Failed to delete message:", error);
-      alert(getApiErrorMessage(error, "Không thể xóa tin nhắn này lúc này."));
+      showAlertDialog(getApiErrorMessage(error, "Không thể xóa tin nhắn này lúc này."), {
+        title: "Không thể xóa",
+        tone: "danger"
+      });
     }
   };
 
@@ -1851,9 +2114,13 @@ function HomePage() {
 
     if (targetIds.length === 0) return;
 
-    const isConfirmed = window.confirm(
-      `Xóa ${targetIds.length} tin nhắn này khỏi phía bạn?`
-    );
+    const isConfirmed = await showConfirmDialog({
+      title: "Xóa nhiều tin nhắn",
+      message: `Xóa ${targetIds.length} tin nhắn này khỏi phía bạn?`,
+      confirmLabel: "Xóa",
+      cancelLabel: "Hủy",
+      tone: "danger"
+    });
     if (!isConfirmed) return;
 
     try {
@@ -1870,11 +2137,17 @@ function HomePage() {
       }
 
       if (succeededIds.length !== targetIds.length) {
-        alert("Một số tin nhắn chưa xóa được.");
+        showAlertDialog("Một số tin nhắn chưa xóa được.", {
+          title: "Thông báo",
+          tone: "warning"
+        });
       }
     } catch (error) {
       console.error("Failed to delete grouped messages:", error);
-      alert(getApiErrorMessage(error, "Không thể xóa các tin nhắn này lúc này."));
+      showAlertDialog(getApiErrorMessage(error, "Không thể xóa các tin nhắn này lúc này."), {
+        title: "Không thể xóa",
+        tone: "danger"
+      });
     }
   };
 
@@ -1907,13 +2180,7 @@ function HomePage() {
       })
     : [];
 
-  const filteredConversations = [...conversations]
-    .sort((firstConversation, secondConversation) => {
-      return (
-        getConversationSortTime(secondConversation) -
-        getConversationSortTime(firstConversation)
-      );
-    })
+  const filteredConversations = sortConversationsByPinAndActivity(conversations)
     .filter((conversation) =>
       getConversationDisplayName(conversation)
         .toLowerCase()
@@ -2447,7 +2714,54 @@ function HomePage() {
       raw: otherMember,
       isOnline
     });
+    setSelectedFriendProfileAction("view");
     setShowFriendProfileModal(true);
+  };
+
+  const handleUnfriendFriend = async (contact) => {
+    const friendId = getSafeId(contact?.id || contact?.user_id);
+
+    if (!friendId) {
+      throw new Error("Missing friend id");
+    }
+
+    await unfriendFriend(friendId);
+
+    setConversations((prev) => {
+      const next = prev.filter((conversation) => {
+        if (conversation?.isGroup) return true;
+
+        const conversationFriendId = getSafeId(conversation?.friendId);
+        if (conversationFriendId && conversationFriendId === friendId) {
+          return false;
+        }
+
+        const memberMatches = Array.isArray(conversation?.members)
+          ? conversation.members.some((member) => getSafeId(getUserId(member)) === friendId)
+          : false;
+
+        return !memberMatches;
+      });
+
+      return next;
+    });
+
+    if (String(selectedConversationId || "") && !isVirtualConversationId(selectedConversationId)) {
+      const selected = conversations.find((conversation) => conversation.id === selectedConversationId);
+      const selectedFriendMatches = selected && !selected.isGroup && Array.isArray(selected.members)
+        ? selected.members.some((member) => getSafeId(getUserId(member)) === friendId)
+        : false;
+
+      if (selectedFriendMatches) {
+        setSelectedConversationId(null);
+        setMessages([]);
+        setMessagePageCursor(null);
+        setHasMoreMessages(true);
+        failedOlderMessagesCursorRef.current = null;
+        setReplyTarget(null);
+        setHighlightedMessageId(null);
+      }
+    }
   };
 
   return (
@@ -2479,6 +2793,8 @@ function HomePage() {
         formatConversationTime={formatConversationTime}
         getConversationPreview={getConversationPreview}
         onAvatarClick={handleOpenFriendProfileFromConversation}
+        onTogglePinConversation={handleTogglePinConversation}
+        pinActionLoadingByConversationId={pinActionLoadingByConversationId}
       />
 
       <ChatWindow
@@ -2509,6 +2825,7 @@ function HomePage() {
         onClearReplyTarget={() => setReplyTarget(null)}
         highlightedMessageId={highlightedMessageId}
         onReplyPreviewDoubleClick={handleReplyPreviewDoubleClick}
+        onJumpToMessage={handleReplyPreviewDoubleClick}
         handleSendMessage={handleSendMessage}
         handleRecallMessage={handleRecallMessage}
         handleRecallMessageGroup={handleRecallMessageGroup}
@@ -2577,7 +2894,10 @@ function HomePage() {
         onClose={() => {
           setShowFriendProfileModal(false);
           setSelectedFriendProfile(null);
+          setSelectedFriendProfileAction("view");
         }}
+        onUnfriend={handleUnfriendFriend}
+        initialAction={selectedFriendProfileAction}
       />
 
       <CallParticipantModal
@@ -2606,6 +2926,18 @@ function HomePage() {
         errorMessage={callParticipantError}
       />
 
+      <ActionDialog
+        isOpen={Boolean(dialogState)}
+        title={dialogState?.title}
+        message={dialogState?.message}
+        tone={dialogState?.tone || "neutral"}
+        confirmLabel={dialogState?.confirmLabel || "Đã hiểu"}
+        cancelLabel={dialogState?.cancelLabel || "Hủy"}
+        showCancel={dialogState?.type === "confirm"}
+        onConfirm={dialogState?.onConfirm || closeActionDialog}
+        onCancel={dialogState?.onCancel || closeActionDialog}
+      />
+
       <CallOverlay
         activeCall={activeCall}
         callPhase={callPhase}
@@ -2626,3 +2958,4 @@ function HomePage() {
 }
 
 export default HomePage;
+
