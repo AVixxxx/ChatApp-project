@@ -21,7 +21,8 @@ function GroupInfoModal({
   isAddingMembers,
   isLeavingGroup,
   isTransferringAdmin,
-  isDissolvingGroup
+  isDissolvingGroup,
+  initialAddMembersView = false
 }) {
   const [editMode, setEditMode] = useState(false);
   const [editName, setEditName] = useState("");
@@ -29,6 +30,7 @@ function GroupInfoModal({
   const [editAvatarPreview, setEditAvatarPreview] = useState(null);
   const [showAddMembersPane, setShowAddMembersPane] = useState(false);
   const [selectedToAdd, setSelectedToAdd] = useState([]);
+  const [friendSearchTerm, setFriendSearchTerm] = useState("");
   const avatarInputRef = useRef(null);
 
   useEffect(() => {
@@ -39,8 +41,14 @@ function GroupInfoModal({
       setEditAvatarPreview(null);
       setShowAddMembersPane(false);
       setSelectedToAdd([]);
+      setFriendSearchTerm("");
     }
   }, [show]);
+
+  useEffect(() => {
+    if (!show) return;
+    setShowAddMembersPane(Boolean(initialAddMembersView));
+  }, [initialAddMembersView, show]);
 
   if (!show || !selectedConversation?.isGroup) return null;
 
@@ -102,7 +110,22 @@ function GroupInfoModal({
     onAddMembers?.(selectedToAdd);
     setSelectedToAdd([]);
     setShowAddMembersPane(false);
+    setFriendSearchTerm("");
   };
+
+  const normalizedFriendSearchTerm = String(friendSearchTerm || "").trim().toLowerCase();
+  const filteredFriendsToAdd = Array.isArray(availableFriendsToAdd)
+    ? availableFriendsToAdd.filter((friend) => {
+        if (!normalizedFriendSearchTerm) return true;
+
+        const name = String(friend?.name || friend?.full_name || "").toLowerCase();
+        const email = String(friend?.email || "").toLowerCase();
+        return (
+          name.includes(normalizedFriendSearchTerm) ||
+          email.includes(normalizedFriendSearchTerm)
+        );
+      })
+    : [];
 
   const groupAvatarSrc =
     editAvatarPreview ||
@@ -125,8 +148,17 @@ function GroupInfoModal({
           /* ── Add Members Pane ── */
           <div className="group-info-body">
             {availableFriendsToAdd && availableFriendsToAdd.length > 0 ? (
-              <div className="group-info-member-list">
-                {availableFriendsToAdd.map((friend) => {
+              <>
+                <input
+                  type="text"
+                  className="group-info-edit-input"
+                  placeholder="Tìm bạn bè..."
+                  value={friendSearchTerm}
+                  onChange={(event) => setFriendSearchTerm(event.target.value)}
+                  autoFocus
+                />
+                <div className="group-info-member-list">
+                {filteredFriendsToAdd.map((friend) => {
                   const fId = friend.id || friend.user_id;
                   const checked = selectedToAdd.includes(fId);
                   return (
@@ -153,14 +185,22 @@ function GroupInfoModal({
                     </div>
                   );
                 })}
-              </div>
+                </div>
+              </>
             ) : (
               <p className="group-info-empty-msg">Không có bạn bè nào để thêm.</p>
+            )}
+            {availableFriendsToAdd?.length > 0 && filteredFriendsToAdd.length === 0 && (
+              <p className="group-info-empty-msg">Không tìm thấy bạn phù hợp.</p>
             )}
             <div className="group-info-action-row">
               <button
                 className="group-info-btn-secondary"
-                onClick={() => { setShowAddMembersPane(false); setSelectedToAdd([]); }}
+                onClick={() => {
+                  setShowAddMembersPane(false);
+                  setSelectedToAdd([]);
+                  setFriendSearchTerm("");
+                }}
               >
                 Hủy
               </button>

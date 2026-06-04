@@ -1,9 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { FaPhone, FaVideo, FaInfoCircle, FaSearch, FaTimes, FaSpinner } from "react-icons/fa";
+import {
+  FaPhone,
+  FaVideo,
+  FaInfoCircle,
+  FaSearch,
+  FaTimes,
+  FaSpinner,
+  FaUserPlus,
+  FaHashtag,
+  FaChartBar
+} from "react-icons/fa";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import ImagePreviewModal from "./ImagePreviewModal";
 import ActionDialog from "./ActionDialog";
+import PollComposer from "./PollComposer";
 import { searchMessages } from "@/features/chat/services/messageService";
 
 function ChatWindow({
@@ -41,6 +52,10 @@ function ChatWindow({
   handleDeleteMessageGroup,
   onStartAudioCall,
   onStartVideoCall,
+  onOpenAddMembers,
+  onOpenGenerateJoinCode,
+  onCreatePoll,
+  isCreatingPoll = false,
   isCallActionDisabled = false
 }) {
   const [selectedImage, setSelectedImage] = useState(null);
@@ -52,8 +67,11 @@ function ChatWindow({
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
   const [dialogState, setDialogState] = useState(null);
+  const [isGroupActionMenuOpen, setIsGroupActionMenuOpen] = useState(false);
+  const [isPollComposerOpen, setIsPollComposerOpen] = useState(false);
   const searchDebounceRef = useRef(null);
   const searchAbortRef = useRef(null);
+  const groupActionMenuRef = useRef(null);
 
   const getMessageAttachmentUrl = (message) =>
     message?.imageUrl || message?.fileUrl || message?.file_url || "";
@@ -194,6 +212,36 @@ function ChatWindow({
     }
   }, [selectedConversationId]);
 
+  useEffect(() => {
+    if (!isGroupActionMenuOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!groupActionMenuRef.current?.contains(event.target)) {
+        setIsGroupActionMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setIsGroupActionMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isGroupActionMenuOpen]);
+
+  useEffect(() => {
+    if (!selectedConversation?.isGroup) {
+      setIsPollComposerOpen(false);
+    }
+  }, [selectedConversation?.isGroup]);
+
   const performSearch = (q) => {
     if (searchDebounceRef.current) {
       window.clearTimeout(searchDebounceRef.current);
@@ -308,6 +356,57 @@ function ChatWindow({
           >
             <FaSearch className="header-action-icon" />
           </button>
+          {selectedConversation?.isGroup && (
+            <button
+              type="button"
+              className="header-action-btn"
+              onClick={() => setIsPollComposerOpen(true)}
+              title="Create poll"
+              aria-label="Create poll"
+            >
+              <FaChartBar className="header-action-icon" />
+            </button>
+          )}
+          {selectedConversation?.isGroup && (
+            <div className="header-action-menu-anchor" ref={groupActionMenuRef}>
+              <button
+                type="button"
+                className={`header-action-btn ${isGroupActionMenuOpen ? "is-active" : ""}`}
+                onClick={() => setIsGroupActionMenuOpen((current) => !current)}
+                title="Group actions"
+                aria-label="Group actions"
+              >
+                <FaUserPlus className="header-action-icon" />
+              </button>
+
+              {isGroupActionMenuOpen && (
+                <div className="header-action-menu" role="menu" aria-label="Tác vụ nhóm">
+                  <button
+                    type="button"
+                    className="header-action-menu-item"
+                    onClick={() => {
+                      setIsGroupActionMenuOpen(false);
+                      onOpenAddMembers?.();
+                    }}
+                  >
+                    <FaUserPlus />
+                    <span>Thêm bạn vào nhóm</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="header-action-menu-item"
+                    onClick={() => {
+                      setIsGroupActionMenuOpen(false);
+                      onOpenGenerateJoinCode?.();
+                    }}
+                  >
+                    <FaHashtag />
+                    <span>Tạo mã tham gia</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -401,6 +500,21 @@ function ChatWindow({
         isOpen={isPreviewOpen}
         image={selectedImage}
         onClose={closeImagePreview}
+      />
+
+      <PollComposer
+        isOpen={isPollComposerOpen}
+        isSubmitting={isCreatingPoll}
+        onClose={() => {
+          if (isCreatingPoll) return;
+          setIsPollComposerOpen(false);
+        }}
+        onSubmit={async (payload) => {
+          const didCreate = await onCreatePoll?.(payload);
+          if (didCreate !== false) {
+            setIsPollComposerOpen(false);
+          }
+        }}
       />
 
       <div className="typing-text">Typing status will be added later...</div>

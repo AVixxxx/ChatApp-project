@@ -8,12 +8,15 @@ import {
   createGroupConversation,
   createPrivateConversation,
   addMemberToGroup,
+  generateJoinCode,
   removeMemberFromGroup,
   leaveGroupConversation,
+  joinGroupByCode,
   transferAdminRole,
   deleteGroupConversation,
   updateGroupInfo,
-  togglePinConversation as togglePinConversationApi
+  togglePinConversation as togglePinConversationApi,
+  createPoll as createPollApi
 } from "@/features/chat/services/conversationService";
 import {
   getMessagesPage,
@@ -49,6 +52,8 @@ import CallOverlay from "@/features/chat/components/CallOverlay";
 import { useGroupCall } from "@/features/chat/hooks/useGroupCall";
 import CallParticipantModal from "@/features/chat/components/CallParticipantModal";
 import ActionDialog from "@/features/chat/components/ActionDialog";
+import JoinByCodeModal from "@/features/chat/components/JoinByCodeModal";
+import GroupJoinCodeModal from "@/features/chat/components/GroupJoinCodeModal";
 
 const getEntityId = (entity) => {
   if (!entity || typeof entity !== "object") return null;
@@ -222,12 +227,19 @@ function HomePage() {
   const [groupName, setGroupName] = useState("");
   const [groupModalError, setGroupModalError] = useState("");
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [isJoinByCodeModalOpen, setIsJoinByCodeModalOpen] = useState(false);
+  const [joinByCodeInput, setJoinByCodeInput] = useState("");
+  const [isJoiningByCode, setIsJoiningByCode] = useState(false);
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
+  const [groupInfoInitialAddMembersView, setGroupInfoInitialAddMembersView] = useState(false);
   const [isUpdatingGroup, setIsUpdatingGroup] = useState(false);
   const [isAddingMembers, setIsAddingMembers] = useState(false);
   const [isLeavingGroup, setIsLeavingGroup] = useState(false);
   const [isTransferringAdmin, setIsTransferringAdmin] = useState(false);
   const [isDissolvingGroup, setIsDissolvingGroup] = useState(false);
+  const [isGroupJoinCodeModalOpen, setIsGroupJoinCodeModalOpen] = useState(false);
+  const [generatedJoinCode, setGeneratedJoinCode] = useState("");
+  const [isGeneratingJoinCode, setIsGeneratingJoinCode] = useState(false);
   const [showFriendProfileModal, setShowFriendProfileModal] = useState(false);
   const [dialogState, setDialogState] = useState(null);
   const [selectedFriendProfile, setSelectedFriendProfile] = useState(null);
@@ -242,6 +254,7 @@ function HomePage() {
   const [pinActionLoadingByConversationId, setPinActionLoadingByConversationId] = useState({});
   const [pinToast, setPinToast] = useState(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState(null);
+  const [isCreatingPoll, setIsCreatingPoll] = useState(false);
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const shouldScrollToBottomRef = useRef(false);
@@ -251,6 +264,7 @@ function HomePage() {
   const failedOlderMessagesCursorRef = useRef(null);
   const replyHighlightTimeoutRef = useRef(null);
   const pinToastTimeoutRef = useRef(null);
+  const joinedConversationIdsRef = useRef(new Set());
   const [messagePageCursor, setMessagePageCursor] = useState(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [isInitialMessagesLoading, setIsInitialMessagesLoading] = useState(false);
@@ -1097,6 +1111,52 @@ function HomePage() {
     }
   };
 
+  const refreshConversationList = async ({ preferredConversationId = null } = {}) => {
+    const [conversationData, friendData] = await Promise.all([
+      getConversations(),
+      getFriends()
+    ]);
+
+    setAllUsers(Array.isArray(friendData) ? friendData : []);
+
+    const mergedConversations = mergeConversationsWithFriends(
+      conversationData,
+      friendData
+    );
+
+    const mergedWithLiveStatus = mergeConversationListPresence(
+      mergedConversations,
+      conversations
+    );
+
+    setConversations((prev) =>
+      isConversationListEquivalent(prev, mergedWithLiveStatus)
+        ? prev
+        : mergedWithLiveStatus
+    );
+
+    const normalizedPreferredConversationId = getSafeId(preferredConversationId);
+
+    setSelectedConversationId((prev) => {
+      if (
+        normalizedPreferredConversationId &&
+        mergedWithLiveStatus.some(
+          (conversation) => getSafeId(conversation.id) === normalizedPreferredConversationId
+        )
+      ) {
+        return normalizedPreferredConversationId;
+      }
+
+      if (prev && mergedWithLiveStatus.some((conversation) => conversation.id === prev)) {
+        return prev;
+      }
+
+      return mergedWithLiveStatus[0]?.id || null;
+    });
+
+    return mergedWithLiveStatus;
+  };
+
   const openGroupModal = async () => {
     try {
       const friends = await getFriends();
@@ -1118,8 +1178,48 @@ function HomePage() {
     setGroupModalError("");
   };
 
+  const openJoinByCodeModal = () => {
+    setJoinByCodeInput("");
+    setIsJoinByCodeModalOpen(true);
+  };
+
+  const closeJoinByCodeModal = (force = false) => {
+    if (isJoiningByCode && !force) return;
+    setIsJoinByCodeModalOpen(false);
+    setJoinByCodeInput("");
+  };
+
+  const openAddMembersModal = async () => {
+    if (!currentConversation?.isGroup) return;
+
+    if (currentConversation?.id) {
+      hydrateGroupConversationMembers(currentConversation.id);
+    }
+
+    setGroupInfoInitialAddMembersView(true);
+    setShowGroupInfoModal(true);
+  };
+
+  const closeGroupJoinCodeModal = () => {
+    if (isGeneratingJoinCode) return;
+    setIsGroupJoinCodeModalOpen(false);
+    setGeneratedJoinCode("");
+  };
+
+  const closeGroupInfoModal = () => {
+    setGroupInfoInitialAddMembersView(false);
+    setShowGroupInfoModal(false);
+  };
+
   const closeActionDialog = () => {
     setDialogState(null);
+  };
+
+  const handleJoinByCodeInputChange = (rawValue) => {
+    const normalizedValue = String(rawValue || "")
+      .replace(/\s+/g, "")
+      .toUpperCase();
+    setJoinByCodeInput(normalizedValue);
   };
 
   const showAlertDialog = (message, options = {}) => {
@@ -1151,6 +1251,80 @@ function HomePage() {
         }
       });
     });
+  };
+
+  const handleJoinGroupByCode = async () => {
+    const normalizedCode = String(joinByCodeInput || "").trim().toUpperCase();
+
+    if (!normalizedCode || isJoiningByCode) return;
+
+    try {
+      setIsJoiningByCode(true);
+      const response = await joinGroupByCode(normalizedCode);
+      const joinedConversationId = response?.conversationId || response?.conversation_id || null;
+
+      closeJoinByCodeModal(true);
+      await refreshConversationList({ preferredConversationId: joinedConversationId });
+
+      if (joinedConversationId) {
+        await hydrateGroupConversationMembers(joinedConversationId);
+      }
+
+      showAlertDialog("Tham gia nhóm thành công.", {
+        title: "Thành công",
+        tone: "success",
+        confirmLabel: "Đã hiểu"
+      });
+    } catch (error) {
+      showAlertDialog(getApiErrorMessage(error, "Không thể tham gia nhóm lúc này."), {
+        title: "Không thể tham gia nhóm",
+        tone: "danger"
+      });
+    } finally {
+      setIsJoiningByCode(false);
+    }
+  };
+
+  const handleGenerateGroupJoinCode = async () => {
+    const conversationId = currentConversation?.id;
+
+    if (!conversationId || isGeneratingJoinCode) return;
+
+    try {
+      setIsGeneratingJoinCode(true);
+      setGeneratedJoinCode("");
+      setIsGroupJoinCodeModalOpen(true);
+
+      const response = await generateJoinCode(conversationId);
+      setGeneratedJoinCode(String(response?.join_code || "").toUpperCase());
+    } catch (error) {
+      setIsGroupJoinCodeModalOpen(false);
+      showAlertDialog(getApiErrorMessage(error, "Không thể tạo mã tham gia lúc này."), {
+        title: "Không thể tạo mã",
+        tone: "danger"
+      });
+    } finally {
+      setIsGeneratingJoinCode(false);
+    }
+  };
+
+  const handleCopyGroupJoinCode = async () => {
+    if (!generatedJoinCode) return;
+
+    try {
+      await navigator.clipboard.writeText(generatedJoinCode);
+      showAlertDialog("Đã sao chép mã tham gia nhóm.", {
+        title: "Đã sao chép",
+        tone: "success",
+        confirmLabel: "Đóng"
+      });
+    } catch (error) {
+      console.error("Failed to copy join code:", error);
+      showAlertDialog("Không thể sao chép mã lúc này.", {
+        title: "Sao chép thất bại",
+        tone: "danger"
+      });
+    }
   };
 
   const toggleGroupMember = (userId) => {
@@ -1192,8 +1366,17 @@ function HomePage() {
         await addMemberToGroup(currentConversation.id, uid);
       }
       await hydrateGroupConversationMembers(currentConversation.id);
+      showAlertDialog("Đã thêm thành viên vào nhóm.", {
+        title: "Thành công",
+        tone: "success",
+        confirmLabel: "Đã hiểu"
+      });
     } catch (error) {
       console.error("Failed to add members:", error);
+      showAlertDialog(getApiErrorMessage(error, "Không thể thêm thành viên lúc này."), {
+        title: "Không thể thêm thành viên",
+        tone: "danger"
+      });
     } finally {
       setIsAddingMembers(false);
     }
@@ -1482,36 +1665,7 @@ function HomePage() {
   useEffect(() => {
     const fetchConversations = async () => {
       try {
-        const [conversationData, friendData] = await Promise.all([
-          getConversations(),
-          getFriends()
-        ]);
-
-        setAllUsers(Array.isArray(friendData) ? friendData : []);
-
-        const mergedConversations = mergeConversationsWithFriends(
-          conversationData,
-          friendData
-        );
-
-        const mergedWithLiveStatus = mergeConversationListPresence(
-          mergedConversations,
-          conversations
-        );
-
-        setConversations((prev) =>
-          isConversationListEquivalent(prev, mergedWithLiveStatus)
-            ? prev
-            : mergedWithLiveStatus
-        );
-
-        setSelectedConversationId((prev) => {
-          if (prev && mergedWithLiveStatus.some((conversation) => conversation.id === prev)) {
-            return prev;
-          }
-
-          return mergedWithLiveStatus[0]?.id || null;
-        });
+        await refreshConversationList();
       } catch (error) {
         console.error("Failed to load conversations:", error);
       }
@@ -1526,7 +1680,9 @@ function HomePage() {
     const refreshGroupInfoContext = async () => {
       try {
         const [friends] = await Promise.all([
-          getFriends(),
+          Array.isArray(allUsers) && allUsers.length > 0
+            ? Promise.resolve(allUsers)
+            : getFriends(),
           currentConversation?.id
             ? hydrateGroupConversationMembers(currentConversation.id)
             : Promise.resolve()
@@ -1538,18 +1694,44 @@ function HomePage() {
     };
 
     refreshGroupInfoContext();
-  }, [showGroupInfoModal, currentConversation?.id, currentConversation?.isGroup]);
+  }, [showGroupInfoModal, currentConversation?.id, currentConversation?.isGroup, allUsers]);
 
   useEffect(() => {
-    if (!selectedConversationId || isVirtualConversationId(selectedConversationId)) {
-      return;
-    }
-    socketClient.emit("join_conversation", selectedConversationId);
+    const nextConversationIds = new Set(
+      (Array.isArray(conversations) ? conversations : [])
+        .map((conversation) => getSafeId(conversation?.id))
+        .filter((conversationId) => conversationId && !isVirtualConversationId(conversationId))
+    );
 
+    nextConversationIds.forEach((conversationId) => {
+      if (joinedConversationIdsRef.current.has(conversationId)) {
+        return;
+      }
+
+      socketClient.emit("join_conversation", conversationId);
+      console.log("[poll-debug] joined conversation room:", conversationId);
+      joinedConversationIdsRef.current.add(conversationId);
+    });
+
+    joinedConversationIdsRef.current.forEach((conversationId) => {
+      if (nextConversationIds.has(conversationId)) {
+        return;
+      }
+
+      socketClient.emit("leave_conversation", conversationId);
+      console.log("[poll-debug] left conversation room:", conversationId);
+      joinedConversationIdsRef.current.delete(conversationId);
+    });
+  }, [conversations, socketClient]);
+
+  useEffect(() => {
     return () => {
-      socketClient.emit("leave_conversation", selectedConversationId);
+      joinedConversationIdsRef.current.forEach((conversationId) => {
+        socketClient.emit("leave_conversation", conversationId);
+      });
+      joinedConversationIdsRef.current.clear();
     };
-  }, [selectedConversationId, socketClient]);
+  }, [socketClient]);
 
   useEffect(() => {
     const selected = conversations.find(
@@ -1682,11 +1864,44 @@ function HomePage() {
       markMessagesAsRecalled([recalledMessageId]);
     };
 
+    const handleNewPollCreated = (payload) => {
+      const pollConversationId = String(payload?.conversationId || payload?.conversation_id || "");
+      const pollId = payload?.pollId || payload?.poll_id;
+      const question = String(payload?.question || "").trim();
+
+      console.log("[poll-debug] received new_poll_created:", payload);
+
+      if (!pollConversationId || !pollId || !question) {
+        return;
+      }
+
+      const pollMessage = buildPollMessage({
+        pollId,
+        conversationId: pollConversationId,
+        question,
+        options: Array.isArray(payload?.options) ? payload.options : [],
+        creator: payload?.creator || payload?.sender || null,
+        createdAt: payload?.createdAt || payload?.created_at || new Date().toISOString()
+      });
+
+      updateConversationWithNewMessage(pollMessage);
+
+      if (pollConversationId === String(currentConversation?.id || selectedConversationId || "")) {
+        shouldScrollToBottomRef.current = isNearBottom();
+        appendMessageWithoutDuplicate(pollMessage);
+        console.log("[poll-debug] appended poll to active messages:", {
+          pollConversationId,
+          pollId
+        });
+      }
+    };
+
     socketClient.on("receive_message", handleReceiveMessage);
     socketClient.on("new_message", handleReceiveMessage);
     socketClient.on("new_messages_batch", handleReceiveMessageBatch);
     socketClient.on("delete message", handleDeleteMessage);
     socketClient.on("message_recalled", handleMessageRecalled);
+    socketClient.on("new_poll_created", handleNewPollCreated);
 
     return () => {
       socketClient.off("receive_message", handleReceiveMessage);
@@ -1694,6 +1909,7 @@ function HomePage() {
       socketClient.off("new_messages_batch", handleReceiveMessageBatch);
       socketClient.off("delete message", handleDeleteMessage);
       socketClient.off("message_recalled", handleMessageRecalled);
+      socketClient.off("new_poll_created", handleNewPollCreated);
     };
   }, [currentConversation, selectedConversationId, socketClient, user?.id]);
 
@@ -1908,6 +2124,7 @@ function HomePage() {
   ]);
 
   useEffect(() => {
+    setGroupInfoInitialAddMembersView(false);
     setShowGroupInfoModal(false);
   }, [selectedConversationId]);
 
@@ -2002,6 +2219,64 @@ function HomePage() {
     } catch (error) {
       console.error("Failed to send message:", error);
       throw error;
+    }
+  };
+
+  const handleCreatePoll = async ({ question, options }) => {
+    const conversationId = currentConversation?.id || selectedConversationId;
+    const normalizedQuestion = String(question || "").trim();
+    const normalizedOptions = Array.isArray(options)
+      ? options.map((option) => String(option || "").trim()).filter(Boolean)
+      : [];
+
+    if (!conversationId || !currentConversation?.isGroup) {
+      return false;
+    }
+
+    if (!normalizedQuestion || normalizedOptions.length < 2) {
+      return false;
+    }
+
+    try {
+      setIsCreatingPoll(true);
+
+      const response = await createPollApi({
+        conversationId,
+        question: normalizedQuestion,
+        options: normalizedOptions
+      });
+
+      const pollId = response?.pollId || response?.poll_id;
+      if (!pollId) {
+        throw new Error("Missing poll id");
+      }
+
+      console.log("[poll-debug] create poll response:", {
+        conversationId,
+        pollId,
+        question: normalizedQuestion
+      });
+
+      const pollMessage = buildPollMessage({
+        pollId,
+        conversationId,
+        question: normalizedQuestion,
+        options: normalizedOptions
+      });
+
+      shouldScrollToBottomRef.current = true;
+      appendMessageWithoutDuplicate(pollMessage);
+      updateConversationWithNewMessage(pollMessage);
+      return true;
+    } catch (error) {
+      console.error("Failed to create poll:", error);
+      showAlertDialog(getApiErrorMessage(error, "Không thể tạo poll lúc này."), {
+        title: "Không thể tạo poll",
+        tone: "danger"
+      });
+      return false;
+    } finally {
+      setIsCreatingPoll(false);
     }
   };
 
@@ -2253,6 +2528,37 @@ function HomePage() {
     message?.message_type ||
     message?.type ||
     (message?.fileUrl || message?.file_url ? "file" : "text");
+
+  const buildPollMessage = ({
+    pollId,
+    conversationId,
+    question,
+    options,
+    creator = user,
+    createdAt = new Date().toISOString()
+  }) =>
+    normalizeMessage({
+      id: `poll-${pollId}`,
+      conversationId,
+      text: String(question || "").trim(),
+      content: String(question || "").trim(),
+      type: "poll",
+      messageType: "poll",
+      createdAt,
+      sender: creator,
+      sender_id: getUserId(creator),
+      poll: {
+        pollId,
+        question: String(question || "").trim(),
+        options: Array.isArray(options)
+          ? options.map((option) =>
+              typeof option === "string"
+                ? option
+                : option?.option_text || option?.text || ""
+            )
+          : []
+      }
+    });
 
   const getReplyPreviewContent = (message) => {
     if (!message) return "Tin nhắn";
@@ -2780,6 +3086,7 @@ function HomePage() {
         onSearchTermChange={setSearchTerm}
         onOpenAddFriend={openAddFriendModal}
         onOpenCreateGroup={openGroupModal}
+        onOpenJoinByCode={openJoinByCodeModal}
         conversations={conversations}
         filteredConversations={filteredConversations}
         selectedConversationId={selectedConversationId}
@@ -2833,6 +3140,10 @@ function HomePage() {
         handleDeleteMessageGroup={handleDeleteMessageGroup}
         onStartAudioCall={() => handleRequestStartCall("audio")}
         onStartVideoCall={() => handleRequestStartCall("video")}
+        onOpenAddMembers={openAddMembersModal}
+        onOpenGenerateJoinCode={handleGenerateGroupJoinCode}
+        onCreatePoll={handleCreatePoll}
+        isCreatingPoll={isCreatingPoll}
         isCallActionDisabled={!canStartCall}
       />
 
@@ -2843,7 +3154,7 @@ function HomePage() {
         selectedConversation={currentConversation}
         selectedGroupMemberCount={selectedGroupMemberCount}
         selectedGroupMembersList={selectedGroupMembersList}
-        close={() => setShowGroupInfoModal(false)}
+        close={closeGroupInfoModal}
         getUserId={getUserId}
         getGroupInfoMemberAvatar={getGroupInfoMemberAvatar}
         currentUserId={user?.id}
@@ -2859,6 +3170,7 @@ function HomePage() {
         isLeavingGroup={isLeavingGroup}
         isTransferringAdmin={isTransferringAdmin}
         isDissolvingGroup={isDissolvingGroup}
+        initialAddMembersView={groupInfoInitialAddMembersView}
       />
 
       <GroupModal
@@ -2886,6 +3198,23 @@ function HomePage() {
         onClose={closeAddFriendModal}
         onSearch={handleSearchAddFriend}
         onAddFriend={handleAddFriendFromSearch}
+      />
+
+      <JoinByCodeModal
+        isOpen={isJoinByCodeModalOpen}
+        code={joinByCodeInput}
+        onCodeChange={handleJoinByCodeInputChange}
+        onClose={closeJoinByCodeModal}
+        onSubmit={handleJoinGroupByCode}
+        isSubmitting={isJoiningByCode}
+      />
+
+      <GroupJoinCodeModal
+        isOpen={isGroupJoinCodeModalOpen}
+        joinCode={generatedJoinCode}
+        isLoading={isGeneratingJoinCode}
+        onClose={closeGroupJoinCodeModal}
+        onCopy={handleCopyGroupJoinCode}
       />
 
       <FriendProfileModal

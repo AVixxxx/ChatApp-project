@@ -159,6 +159,67 @@
   color: #fff;
 }
 
+.search-action-btn.is-active {
+  background: #2f72ff;
+  color: #fff;
+}
+
+.toolbar-menu-anchor,
+.header-action-menu-anchor {
+  position: relative;
+}
+
+.toolbar-popover-menu,
+.header-action-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 190px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  padding: 8px;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+  z-index: 20;
+  animation: popoverIn 140ms ease-out;
+  backdrop-filter: blur(10px);
+}
+
+.toolbar-popover-item,
+.header-action-menu-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toolbar-popover-item:hover,
+.header-action-menu-item:hover {
+  background: #eef4ff;
+  color: #2453c9;
+}
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .search-results-panel {
   padding: 0 10px;
   max-height: calc(100vh - 190px);
@@ -553,10 +614,20 @@
   cursor: not-allowed;
 }
 
+.header-action-btn.is-active .header-action-icon,
+.header-action-btn:hover .header-action-icon {
+  color: #173a93;
+}
+
 .header-action-icon {
   font-size: 18px;
   color: #2645a5;
   cursor: pointer;
+}
+
+.header-action-menu {
+  top: calc(100% + 12px);
+  min-width: 210px;
 }
 
 .chat-date {
@@ -1810,6 +1881,10 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
 }
 
+.group-code-modal {
+  animation: popoverIn 160ms ease-out;
+}
+
 .group-modal-header {
   display: flex;
   align-items: center;
@@ -1842,6 +1917,31 @@
   border-radius: 10px;
   outline: none;
   font-size: 14px;
+}
+
+.group-code-input {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  text-align: center;
+}
+
+.group-code-display-wrap {
+  align-items: center;
+}
+
+.group-code-display {
+  width: 100%;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #eff6ff, #f8fafc);
+  border: 1px solid #dbeafe;
+  color: #1d4ed8;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .group-member-list {
@@ -1927,6 +2027,9 @@
 .group-create-btn {
   background: #4f7cff;
   color: white;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .group-create-btn:disabled {

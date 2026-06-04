@@ -29,6 +29,39 @@ const isAttachmentMessageType = (messageType) =>
   messageType === "voice" ||
   messageType === "audio";
 
+const isPollMessageType = (messageType) => messageType === "poll";
+
+function PollMessageCard({ poll, creatorName }) {
+  const options = Array.isArray(poll?.options) ? poll.options : [];
+
+  return (
+    <div className="poll-card">
+      <div className="poll-card-header">
+        <h5>{poll?.question || "Poll"}</h5>
+        {creatorName ? <span>{creatorName}</span> : null}
+      </div>
+
+      <div className="poll-options">
+        {options.map((option, index) => {
+          const optionLabel =
+            typeof option === "string" ? option : option?.option_text || option?.text || "";
+
+          return (
+            <div
+              key={option?.option_id || option?.id || `${optionLabel}-${index}`}
+              className="poll-option-wrapper"
+            >
+              <div className="poll-option-btn">
+                <span>{optionLabel}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const getMessageFileName = (message, attachmentUrl) => {
   const explicitName = (message?.text || "").trim();
   if (explicitName) return explicitName;
@@ -351,6 +384,11 @@ function MessageList({
                             />
                           ))}
                         </div>
+                      ) : isPollMessageType(messageType) ? (
+                        <PollMessageCard
+                          poll={latestMessage?.poll}
+                          creatorName={getMessageSenderName?.(latestMessage)}
+                        />
                       ) : (
                         <p>{latestMessage.text}</p>
                       )}

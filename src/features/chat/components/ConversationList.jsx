@@ -1,10 +1,12 @@
-import { FaSearch, FaUserPlus, FaUsers, FaThumbtack, FaSpinner } from "react-icons/fa";
+import { useEffect, useRef, useState } from "react";
+import { FaSearch, FaUserPlus, FaUsers, FaThumbtack, FaSpinner, FaPlus, FaHashtag } from "react-icons/fa";
 
 function ConversationList({
   searchTerm,
   onSearchTermChange,
   onOpenAddFriend,
   onOpenCreateGroup,
+  onOpenJoinByCode,
   conversations,
   filteredConversations,
   selectedConversationId,
@@ -19,6 +21,43 @@ function ConversationList({
   onTogglePinConversation,
   pinActionLoadingByConversationId
 }) {
+  const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
+  const createMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!isCreateMenuOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!createMenuRef.current?.contains(event.target)) {
+        setIsCreateMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setIsCreateMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isCreateMenuOpen]);
+
+  const handleOpenCreateGroup = () => {
+    setIsCreateMenuOpen(false);
+    onOpenCreateGroup?.();
+  };
+
+  const handleOpenJoinByCode = () => {
+    setIsCreateMenuOpen(false);
+    onOpenJoinByCode?.();
+  };
+
   return (
     <div className="conversation-list">
       <div className="conversation-search-toolbar">
@@ -40,14 +79,29 @@ function ConversationList({
         >
           <FaUserPlus />
         </button>
-        <button
-          type="button"
-          className="search-action-btn"
-          title="Create Group"
-          onClick={onOpenCreateGroup}
-        >
-          <FaUsers />
-        </button>
+        <div className="toolbar-menu-anchor" ref={createMenuRef}>
+          <button
+            type="button"
+            className={`search-action-btn ${isCreateMenuOpen ? "is-active" : ""}`}
+            title="Create Group"
+            onClick={() => setIsCreateMenuOpen((current) => !current)}
+          >
+            <FaUsers />
+          </button>
+
+          {isCreateMenuOpen && (
+            <div className="toolbar-popover-menu" role="menu" aria-label="Tạo hoặc tham gia nhóm">
+              <button type="button" className="toolbar-popover-item" onClick={handleOpenCreateGroup}>
+                <FaPlus />
+                <span>Tạo nhóm mới</span>
+              </button>
+              <button type="button" className="toolbar-popover-item" onClick={handleOpenJoinByCode}>
+                <FaHashtag />
+                <span>Tham gia bằng mã</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {conversations.length === 0 ? (

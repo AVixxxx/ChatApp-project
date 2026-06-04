@@ -166,6 +166,26 @@ export const addMemberToGroup = async (conversationId, userId) => {
   return response.data;
 };
 
+export const generateJoinCode = async (conversationId) => {
+  const response = await chatApi.post(
+    `${CONVERSATION_API_PATH}/generate-code`,
+    { conversationId },
+    { headers: { ...getAuthHeaders() } }
+  );
+
+  return response.data;
+};
+
+export const joinGroupByCode = async (code) => {
+  const response = await chatApi.post(
+    `${CONVERSATION_API_PATH}/join-by-code`,
+    { code },
+    { headers: { ...getAuthHeaders() } }
+  );
+
+  return response.data;
+};
+
 export const removeMemberFromGroup = async (conversationId, targetUserId) => {
   const response = await chatApi.delete(
     `${CONVERSATION_API_PATH}/group/remove-member`,
@@ -237,6 +257,37 @@ export const togglePinConversation = async ({ conversationId, isPinned }) => {
       params: {
         conversationId,
         isPinned
+      }
+    }
+  );
+
+  return response.data;
+};
+
+export const createPoll = async ({
+  conversationId,
+  question,
+  options
+}) => {
+
+  const normalizedOptions = Array.isArray(options)
+    ? options
+        .map((option) => String(option || "").trim())
+        .filter(Boolean)
+    : [];
+
+  const payload = {
+    conversationId,
+    question: String(question || "").trim(),
+    options: normalizedOptions
+  };
+
+  const response = await chatApi.post(
+    `${CONVERSATION_API_PATH}/polls`,
+    payload,
+    {
+      headers: {
+        ...getAuthHeaders()
       }
     }
   );
