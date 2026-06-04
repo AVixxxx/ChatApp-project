@@ -31,7 +31,7 @@ const isAttachmentMessageType = (messageType) =>
 
 const isPollMessageType = (messageType) => messageType === "poll";
 
-function PollMessageCard({ poll, creatorName }) {
+function PollMessageCard({ poll, creatorName, onVotePoll, isVoting = false }) {
   const options = Array.isArray(poll?.options) ? poll.options : [];
 
   return (
@@ -45,15 +45,24 @@ function PollMessageCard({ poll, creatorName }) {
         {options.map((option, index) => {
           const optionLabel =
             typeof option === "string" ? option : option?.option_text || option?.text || "";
+          const optionId = option?.option_id || option?.id || null;
+          const voteCount = Number(option?.vote_count || 0);
+          const isVotedByMe = Boolean(option?.is_voted_by_me);
 
           return (
             <div
               key={option?.option_id || option?.id || `${optionLabel}-${index}`}
-              className="poll-option-wrapper"
+              className={`poll-option-wrapper ${isVotedByMe ? "voted-option" : ""}`}
             >
-              <div className="poll-option-btn">
+              <button
+                type="button"
+                className="poll-option-btn"
+                disabled={!optionId || isVoting}
+                onClick={() => onVotePoll?.(poll?.pollId, optionId)}
+              >
                 <span>{optionLabel}</span>
-              </div>
+                <span>{voteCount}</span>
+              </button>
             </div>
           );
         })}
@@ -184,6 +193,8 @@ function MessageList({
   onCopyImage,
   onDownloadImage,
   onDownloadFile,
+  onVotePoll,
+  votingPollId,
   onRecallMessage,
   onRecallMessageGroup,
   onDeleteMessage,
@@ -388,6 +399,8 @@ function MessageList({
                         <PollMessageCard
                           poll={latestMessage?.poll}
                           creatorName={getMessageSenderName?.(latestMessage)}
+                          onVotePoll={onVotePoll}
+                          isVoting={String(votingPollId || "") === String(latestMessage?.poll?.pollId || "")}
                         />
                       ) : (
                         <p>{latestMessage.text}</p>

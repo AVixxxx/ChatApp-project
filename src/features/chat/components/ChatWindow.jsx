@@ -55,6 +55,8 @@ function ChatWindow({
   onOpenAddMembers,
   onOpenGenerateJoinCode,
   onCreatePoll,
+  onVotePoll,
+  votingPollId = "",
   isCreatingPoll = false,
   isCallActionDisabled = false
 }) {
@@ -487,6 +489,8 @@ function ChatWindow({
         onCopyImage={copyImageMessage}
         onDownloadImage={downloadAttachmentMessage}
         onDownloadFile={downloadAttachmentMessage}
+        onVotePoll={onVotePoll}
+        votingPollId={votingPollId}
         onRecallMessage={handleRecallMessage}
         onRecallMessageGroup={handleRecallMessageGroup}
         onDeleteMessage={handleDeleteMessage}

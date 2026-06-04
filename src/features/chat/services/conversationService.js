@@ -294,3 +294,37 @@ export const createPoll = async ({
 
   return response.data;
 };
+
+export const getPolls = async (conversationId) => {
+  if (!conversationId) {
+    return [];
+  }
+
+  const response = await chatApi.get(
+    `${CONVERSATION_API_PATH}/${conversationId}/polls`,
+    {
+      headers: {
+        ...getAuthHeaders()
+      }
+    }
+  );
+
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+export const votePollOption = async ({ pollId, optionId }) => {
+  const response = await chatApi.post(
+    `${CONVERSATION_API_PATH}/polls/vote`,
+    {
+      pollId,
+      optionId
+    },
+    {
+      headers: {
+        ...getAuthHeaders()
+      }
+    }
+  );
+
+  return response.data;
+};

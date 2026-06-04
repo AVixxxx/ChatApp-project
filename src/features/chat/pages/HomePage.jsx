@@ -16,7 +16,9 @@ import {
   deleteGroupConversation,
   updateGroupInfo,
   togglePinConversation as togglePinConversationApi,
-  createPoll as createPollApi
+  createPoll as createPollApi,
+  getPolls as getPollsApi,
+  votePollOption as votePollOptionApi
 } from "@/features/chat/services/conversationService";
 import {
   getMessagesPage,
@@ -94,6 +96,9 @@ const getSafeId = (value) => {
   if (!value) return "";
   return String(value);
 };
+
+const normalizeComparableText = (value) =>
+  String(value || "").trim().toLowerCase();
 
 const escapeSelectorValue = (value) => {
   const safeValue = getSafeId(value);
@@ -255,6 +260,7 @@ function HomePage() {
   const [pinToast, setPinToast] = useState(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState(null);
   const [isCreatingPoll, setIsCreatingPoll] = useState(false);
+  const [votingPollId, setVotingPollId] = useState("");
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const shouldScrollToBottomRef = useRef(false);
@@ -265,6 +271,7 @@ function HomePage() {
   const replyHighlightTimeoutRef = useRef(null);
   const pinToastTimeoutRef = useRef(null);
   const joinedConversationIdsRef = useRef(new Set());
+  const messagesRef = useRef([]);
   const [messagePageCursor, setMessagePageCursor] = useState(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [isInitialMessagesLoading, setIsInitialMessagesLoading] = useState(false);
@@ -981,9 +988,12 @@ function HomePage() {
     setIsInitialMessagesLoading(true);
 
     try {
-      const page = await getMessagesPage(conversationId, { limit: MESSAGE_PAGE_SIZE });
+      const [page, pollMessages] = await Promise.all([
+        getMessagesPage(conversationId, { limit: MESSAGE_PAGE_SIZE }),
+        loadConversationPollMessages(conversationId)
+      ]);
       shouldScrollToBottomRef.current = true;
-      setMessages(attachReplyPreviews(page.messages));
+      setMessages(mergeTimelineItems(page.messages, pollMessages));
       setMessagePageCursor(page.nextCursor || null);
       setHasMoreMessages(Boolean(page.nextCursor));
       failedOlderMessagesCursorRef.current = null;
@@ -1709,7 +1719,6 @@ function HomePage() {
       }
 
       socketClient.emit("join_conversation", conversationId);
-      console.log("[poll-debug] joined conversation room:", conversationId);
       joinedConversationIdsRef.current.add(conversationId);
     });
 
@@ -1719,7 +1728,6 @@ function HomePage() {
       }
 
       socketClient.emit("leave_conversation", conversationId);
-      console.log("[poll-debug] left conversation room:", conversationId);
       joinedConversationIdsRef.current.delete(conversationId);
     });
   }, [conversations, socketClient]);
@@ -1778,6 +1786,10 @@ function HomePage() {
       container.scrollTop = container.scrollHeight;
       shouldScrollToBottomRef.current = false;
     }
+  }, [messages]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
   }, [messages]);
 
   useEffect(() => {
@@ -1864,18 +1876,16 @@ function HomePage() {
       markMessagesAsRecalled([recalledMessageId]);
     };
 
-    const handleNewPollCreated = (payload) => {
+    const handleNewPollCreated = async (payload) => {
       const pollConversationId = String(payload?.conversationId || payload?.conversation_id || "");
       const pollId = payload?.pollId || payload?.poll_id;
       const question = String(payload?.question || "").trim();
-
-      console.log("[poll-debug] received new_poll_created:", payload);
 
       if (!pollConversationId || !pollId || !question) {
         return;
       }
 
-      const pollMessage = buildPollMessage({
+      let pollMessage = buildPollMessage({
         pollId,
         conversationId: pollConversationId,
         question,
@@ -1884,15 +1894,41 @@ function HomePage() {
         createdAt: payload?.createdAt || payload?.created_at || new Date().toISOString()
       });
 
+      if (!Array.isArray(payload?.options) || payload.options.length === 0) {
+        const pollMessages = await loadConversationPollMessages(pollConversationId);
+        const matchedPollMessage = pollMessages.find(
+          (message) => getSafeId(message?.poll?.pollId) === getSafeId(pollId)
+        );
+
+        if (matchedPollMessage) {
+          pollMessage = matchedPollMessage;
+        }
+      }
+
       updateConversationWithNewMessage(pollMessage);
 
       if (pollConversationId === String(currentConversation?.id || selectedConversationId || "")) {
         shouldScrollToBottomRef.current = isNearBottom();
         appendMessageWithoutDuplicate(pollMessage);
-        console.log("[poll-debug] appended poll to active messages:", {
-          pollConversationId,
-          pollId
-        });
+      }
+    };
+
+    const handlePollVotedUpdated = async (payload) => {
+      const pollId = getSafeId(payload?.pollId || payload?.poll_id);
+      const activeConversationId = getSafeId(
+        currentConversation?.id || selectedConversationId
+      );
+      const hasMatchingPollInView = messagesRef.current.some(
+        (message) => getSafeId(message?.poll?.pollId) === pollId
+      );
+
+      if (!pollId || !activeConversationId || !hasMatchingPollInView) {
+        return;
+      }
+
+      const updatedPollMessage = await syncSinglePollMessage(activeConversationId, pollId);
+      if (updatedPollMessage) {
+        replacePollMessageInState(updatedPollMessage);
       }
     };
 
@@ -1902,6 +1938,7 @@ function HomePage() {
     socketClient.on("delete message", handleDeleteMessage);
     socketClient.on("message_recalled", handleMessageRecalled);
     socketClient.on("new_poll_created", handleNewPollCreated);
+    socketClient.on("poll_voted_updated", handlePollVotedUpdated);
 
     return () => {
       socketClient.off("receive_message", handleReceiveMessage);
@@ -1910,6 +1947,7 @@ function HomePage() {
       socketClient.off("delete message", handleDeleteMessage);
       socketClient.off("message_recalled", handleMessageRecalled);
       socketClient.off("new_poll_created", handleNewPollCreated);
+      socketClient.off("poll_voted_updated", handlePollVotedUpdated);
     };
   }, [currentConversation, selectedConversationId, socketClient, user?.id]);
 
@@ -2251,18 +2289,21 @@ function HomePage() {
         throw new Error("Missing poll id");
       }
 
-      console.log("[poll-debug] create poll response:", {
-        conversationId,
-        pollId,
-        question: normalizedQuestion
-      });
-
-      const pollMessage = buildPollMessage({
+      let pollMessage = buildPollMessage({
         pollId,
         conversationId,
         question: normalizedQuestion,
         options: normalizedOptions
       });
+
+      const pollMessages = await loadConversationPollMessages(conversationId);
+      const matchedPollMessage = pollMessages.find(
+        (message) => getSafeId(message?.poll?.pollId) === getSafeId(pollId)
+      );
+
+      if (matchedPollMessage) {
+        pollMessage = matchedPollMessage;
+      }
 
       shouldScrollToBottomRef.current = true;
       appendMessageWithoutDuplicate(pollMessage);
@@ -2277,6 +2318,32 @@ function HomePage() {
       return false;
     } finally {
       setIsCreatingPoll(false);
+    }
+  };
+
+  const handleVotePoll = async (pollId, optionId) => {
+    const conversationId = currentConversation?.id || selectedConversationId;
+
+    if (!conversationId || !pollId || !optionId || votingPollId) {
+      return;
+    }
+
+    try {
+      setVotingPollId(String(pollId));
+      await votePollOptionApi({ pollId, optionId });
+
+      const updatedPollMessage = await syncSinglePollMessage(conversationId, pollId);
+      if (updatedPollMessage) {
+        replacePollMessageInState(updatedPollMessage);
+      }
+    } catch (error) {
+      console.error("Failed to vote poll:", error);
+      showAlertDialog(getApiErrorMessage(error, "Không thể bình chọn lúc này."), {
+        title: "Không thể bình chọn",
+        tone: "danger"
+      });
+    } finally {
+      setVotingPollId("");
     }
   };
 
@@ -2529,6 +2596,87 @@ function HomePage() {
     message?.type ||
     (message?.fileUrl || message?.file_url ? "file" : "text");
 
+  const resolvePollCreatorFromEntity = (pollEntity) => {
+    const creatorId = getSafeId(pollEntity?.creator_id || pollEntity?.creatorId);
+    const creatorName = normalizeComparableText(
+      pollEntity?.creator_name || pollEntity?.creatorName
+    );
+    const creatorAvatar = String(
+      pollEntity?.creator_avatar || pollEntity?.creatorAvatar || ""
+    ).trim();
+    const conversationId = getSafeId(
+      pollEntity?.conversation_id || pollEntity?.conversationId || selectedConversationId
+    );
+    const conversationContext =
+      conversations.find(
+        (conversation) => getSafeId(conversation?.id) === conversationId
+      ) || currentConversation;
+    const candidateMembers = [
+      user,
+      ...(Array.isArray(conversationContext?.members)
+        ? conversationContext.members
+        : [])
+    ]
+      .filter(Boolean)
+      .map((member) => normalizeUserEntity(member));
+
+    if (creatorId) {
+      const matchedById = candidateMembers.find(
+        (member) => getSafeId(getUserId(member)) === creatorId
+      );
+
+      if (matchedById) {
+        return matchedById;
+      }
+    }
+
+    const matchedByNameAndAvatar = candidateMembers.find((member) => {
+      const memberName = normalizeComparableText(
+        member?.username || member?.name
+      );
+      const memberAvatar = getAvatarUrl(member, "").trim();
+
+      return (
+        creatorName &&
+        creatorAvatar &&
+        memberName === creatorName &&
+        memberAvatar === creatorAvatar
+      );
+    });
+
+    if (matchedByNameAndAvatar) {
+      return matchedByNameAndAvatar;
+    }
+
+    const matchedByName = candidateMembers.find((member) => {
+      const memberName = normalizeComparableText(
+        member?.username || member?.name
+      );
+      return creatorName && memberName === creatorName;
+    });
+
+    if (matchedByName) {
+      return matchedByName;
+    }
+
+    const matchedByAvatar = candidateMembers.find((member) => {
+      const memberAvatar = getAvatarUrl(member, "").trim();
+      return creatorAvatar && memberAvatar === creatorAvatar;
+    });
+
+    if (matchedByAvatar) {
+      return matchedByAvatar;
+    }
+
+    return {
+      id: null,
+      user_id: null,
+      username: pollEntity?.creator_name || pollEntity?.creatorName || "",
+      name: pollEntity?.creator_name || pollEntity?.creatorName || "",
+      avatar: pollEntity?.creator_avatar || pollEntity?.creatorAvatar || ""
+    };
+  };
+
   const buildPollMessage = ({
     pollId,
     conversationId,
@@ -2554,11 +2702,88 @@ function HomePage() {
           ? options.map((option) =>
               typeof option === "string"
                 ? option
-                : option?.option_text || option?.text || ""
+                : {
+                    ...option,
+                    option_id: option?.option_id || option?.id || null,
+                    option_text: option?.option_text || option?.text || "",
+                    vote_count: Number(option?.vote_count || 0),
+                    is_voted_by_me: Boolean(option?.is_voted_by_me)
+                  }
             )
           : []
       }
     });
+
+  const buildPollMessageFromEntity = (pollEntity) =>
+    buildPollMessage({
+      pollId: pollEntity?.poll_id || pollEntity?.pollId,
+      conversationId: pollEntity?.conversation_id || pollEntity?.conversationId || selectedConversationId,
+      question: pollEntity?.question,
+      options: Array.isArray(pollEntity?.options) ? pollEntity.options : [],
+      creator: resolvePollCreatorFromEntity(pollEntity),
+      createdAt: pollEntity?.created_at || pollEntity?.createdAt || new Date().toISOString()
+    });
+
+  const mergeTimelineItems = (...itemGroups) => {
+    const merged = new Map();
+
+    itemGroups.flat().filter(Boolean).forEach((item) => {
+      merged.set(getSafeId(getEntityId(item)), item);
+    });
+
+    return attachReplyPreviews(
+      [...merged.values()].sort(
+        (firstItem, secondItem) =>
+          new Date(firstItem?.createdAt || firstItem?.created_at || firstItem?.create_at || 0) -
+          new Date(secondItem?.createdAt || secondItem?.created_at || secondItem?.create_at || 0)
+      )
+    );
+  };
+
+  const loadConversationPollMessages = async (conversationId) => {
+    if (!conversationId || isVirtualConversationId(conversationId)) {
+      return [];
+    }
+
+    try {
+      const polls = await getPollsApi(conversationId);
+      return polls.map(buildPollMessageFromEntity);
+    } catch (error) {
+      console.error("Failed to load polls:", error);
+      return [];
+    }
+  };
+
+  const replacePollMessageInState = (pollMessage) => {
+    const targetPollId = getSafeId(pollMessage?.poll?.pollId);
+    if (!targetPollId) return;
+
+    setMessages((prev) =>
+      mergeTimelineItems(
+        prev.map((message) =>
+          getSafeId(message?.poll?.pollId) === targetPollId
+            ? normalizeMessage({
+                ...pollMessage,
+                sender: pollMessage?.sender || message?.sender || null,
+                sender_id:
+                  pollMessage?.sender_id ||
+                  getUserId(pollMessage?.sender) ||
+                  message?.sender_id ||
+                  getUserId(message?.sender) ||
+                  null
+              })
+            : message
+        )
+      )
+    );
+  };
+
+  const syncSinglePollMessage = async (conversationId, pollId) => {
+    const pollMessages = await loadConversationPollMessages(conversationId);
+    return pollMessages.find(
+      (message) => getSafeId(message?.poll?.pollId) === getSafeId(pollId)
+    ) || null;
+  };
 
   const getReplyPreviewContent = (message) => {
     if (!message) return "Tin nhắn";
@@ -3143,6 +3368,8 @@ function HomePage() {
         onOpenAddMembers={openAddMembersModal}
         onOpenGenerateJoinCode={handleGenerateGroupJoinCode}
         onCreatePoll={handleCreatePoll}
+        onVotePoll={handleVotePoll}
+        votingPollId={votingPollId}
         isCreatingPoll={isCreatingPoll}
         isCallActionDisabled={!canStartCall}
       />
