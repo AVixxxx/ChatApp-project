@@ -18,6 +18,7 @@ import {
   togglePinConversation as togglePinConversationApi,
   createPoll as createPollApi,
   getPolls as getPollsApi,
+  getConversationMedia as getConversationMediaApi,
   votePollOption as votePollOptionApi
 } from "@/features/chat/services/conversationService";
 import {
@@ -270,6 +271,11 @@ function HomePage() {
   const [highlightedMessageId, setHighlightedMessageId] = useState(null);
   const [isCreatingPoll, setIsCreatingPoll] = useState(false);
   const [votingPollId, setVotingPollId] = useState("");
+  const [sharedMedia, setSharedMedia] = useState({
+    images: [],
+    files: []
+  });
+  const [isSharedMediaLoading, setIsSharedMediaLoading] = useState(false);
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const shouldScrollToBottomRef = useRef(false);
@@ -281,6 +287,7 @@ function HomePage() {
   const pinToastTimeoutRef = useRef(null);
   const joinedConversationIdsRef = useRef(new Set());
   const messagesRef = useRef([]);
+  const sharedMediaRequestIdRef = useRef(0);
   const [messagePageCursor, setMessagePageCursor] = useState(null);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [isInitialMessagesLoading, setIsInitialMessagesLoading] = useState(false);
@@ -1828,6 +1835,7 @@ function HomePage() {
     setIsLoadingOlderMessages(false);
     isLoadingOlderMessagesRef.current = false;
     loadInitialMessages(selectedConversationId);
+    loadConversationSharedMedia(selectedConversationId);
   }, [selectedConversationId]);
 
   useLayoutEffect(() => {
@@ -1893,6 +1901,7 @@ function HomePage() {
       if (isActiveConversationMatch || isActiveVirtualDirectMatch) {
         shouldScrollToBottomRef.current = isActiveConversationScrollTarget;
         appendMessageWithoutDuplicate(normalizedMessage);
+        appendSharedMediaFromMessage(normalizedMessage);
         return;
       }
 
@@ -2305,6 +2314,7 @@ function HomePage() {
         appendMessageWithoutDuplicate(
           replyPreview ? { ...message, replyPreview } : message
         );
+        appendSharedMediaFromMessage(message);
       });
 
       const latestMessage = sentMessages[sentMessages.length - 1];
@@ -2663,6 +2673,79 @@ function HomePage() {
     message?.type ||
     (message?.fileUrl || message?.file_url ? "file" : "text");
 
+  const normalizeMediaItem = (item, fallbackType = "") => {
+    if (!item || typeof item !== "object") return null;
+
+    const url = String(
+      item?.url || item?.file_url || item?.fileUrl || item?.imageUrl || ""
+    ).trim();
+
+    if (!url) return null;
+
+    return {
+      id: getSafeId(item?.message_id || item?.messageId || item?.id || url),
+      messageId: getSafeId(item?.message_id || item?.messageId || item?.id || ""),
+      url,
+      filename: String(
+        item?.filename || item?.content || item?.text || item?.name || ""
+      ).trim(),
+      createdAt: item?.create_at || item?.created_at || item?.createdAt || "",
+      type:
+        item?.message_type ||
+        item?.messageType ||
+        item?.type ||
+        fallbackType ||
+        "file"
+    };
+  };
+
+  const mergeMediaItems = (currentItems, incomingItems) => {
+    const merged = new Map();
+
+    [...(Array.isArray(currentItems) ? currentItems : []), ...(Array.isArray(incomingItems) ? incomingItems : [])]
+      .map((item) => normalizeMediaItem(item))
+      .filter(Boolean)
+      .forEach((item) => {
+        merged.set(item.id, item);
+      });
+
+    return [...merged.values()].sort(
+      (firstItem, secondItem) =>
+        new Date(secondItem?.createdAt || 0) - new Date(firstItem?.createdAt || 0)
+    );
+  };
+
+  const appendSharedMediaFromMessage = (message) => {
+    const messageType = getMessageType(message);
+    const mediaType = messageType === "image" ? "images" : messageType === "file" ? "files" : "";
+    const url = String(message?.imageUrl || message?.fileUrl || message?.file_url || "").trim();
+
+    if (!mediaType || !url) {
+      return;
+    }
+
+    const mediaItem = normalizeMediaItem(
+      {
+        id: message?.id,
+        message_id: message?.id || message?.message_id,
+        filename: message?.text || message?.content || "",
+        url,
+        created_at: message?.createdAt || message?.created_at || message?.create_at,
+        message_type: messageType
+      },
+      messageType
+    );
+
+    if (!mediaItem) {
+      return;
+    }
+
+    setSharedMedia((prev) => ({
+      ...prev,
+      [mediaType]: mergeMediaItems(prev?.[mediaType], [mediaItem])
+    }));
+  };
+
   const resolvePollCreatorFromEntity = (pollEntity) => {
     const creatorId = getSafeId(pollEntity?.creator_id || pollEntity?.creatorId);
     const creatorName = normalizeComparableText(
@@ -2818,6 +2901,50 @@ function HomePage() {
     } catch (error) {
       console.error("Failed to load polls:", error);
       return [];
+    }
+  };
+
+  const loadConversationSharedMedia = async (conversationId) => {
+    if (!conversationId || isVirtualConversationId(conversationId)) {
+      setSharedMedia({
+        images: [],
+        files: []
+      });
+      return;
+    }
+
+    const requestId = sharedMediaRequestIdRef.current + 1;
+    sharedMediaRequestIdRef.current = requestId;
+    setIsSharedMediaLoading(true);
+
+    try {
+      const [images, files] = await Promise.all([
+        getConversationMediaApi(conversationId, "image"),
+        getConversationMediaApi(conversationId, "file")
+      ]);
+
+      if (sharedMediaRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setSharedMedia({
+        images: mergeMediaItems([], images.map((item) => normalizeMediaItem(item, "image"))),
+        files: mergeMediaItems([], files.map((item) => normalizeMediaItem(item, "file")))
+      });
+    } catch (error) {
+      if (sharedMediaRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      console.error("Failed to load shared media:", error);
+      setSharedMedia({
+        images: [],
+        files: []
+      });
+    } finally {
+      if (sharedMediaRequestIdRef.current === requestId) {
+        setIsSharedMediaLoading(false);
+      }
     }
   };
 
@@ -3609,7 +3736,12 @@ function HomePage() {
         isCallActionDisabled={!canStartCall}
       />
 
-      <RightPanel openGroupModal={openGroupModal} />
+      <RightPanel
+        openGroupModal={openGroupModal}
+        sharedMedia={sharedMedia}
+        isSharedMediaLoading={isSharedMediaLoading}
+        selectedConversationId={selectedConversationId}
+      />
 
       <GroupInfoModal
         show={showGroupInfoModal}

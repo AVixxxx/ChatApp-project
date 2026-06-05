@@ -312,6 +312,27 @@ export const getPolls = async (conversationId) => {
   return Array.isArray(response.data) ? response.data : [];
 };
 
+export const getConversationMedia = async (conversationId, type) => {
+  if (!conversationId || !type) {
+    return [];
+  }
+
+  const response = await chatApi.get(
+    `${CONVERSATION_API_PATH}/media`,
+    {
+      headers: {
+        ...getAuthHeaders()
+      },
+      params: {
+        conversationId,
+        type
+      }
+    }
+  );
+
+  return Array.isArray(response.data) ? response.data : [];
+};
+
 export const votePollOption = async ({ pollId, optionId }) => {
   const response = await chatApi.post(
     `${CONVERSATION_API_PATH}/polls/vote`,

@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import {
   FaImage,
   FaLink,
@@ -8,11 +9,63 @@ import {
   FaTrashAlt,
   FaUserPlus,
   FaChevronDown,
-  FaTimes
+  FaChevronUp,
+  FaTimes,
+  FaFilePdf,
+  FaFileWord
 } from "react-icons/fa";
 import { MdCheckBox, MdCheckBoxOutlineBlank } from "react-icons/md";
 
-function RightPanel({ openGroupModal }) {
+const getFileExtension = (fileName) => {
+  const safeName = String(fileName || "").trim().toLowerCase();
+  if (!safeName || !safeName.includes(".")) return "";
+  return safeName.split(".").pop() || "";
+};
+
+const getFilePresentation = (fileName) => {
+  const extension = getFileExtension(fileName);
+
+  if (extension === "pdf") {
+    return {
+      Icon: FaFilePdf,
+      iconClassName: "message-file-icon message-file-icon--pdf"
+    };
+  }
+
+  if (extension === "docx" || extension === "doc") {
+    return {
+      Icon: FaFileWord,
+      iconClassName: "message-file-icon message-file-icon--word"
+    };
+  }
+
+  return {
+    Icon: FaFileAlt,
+    iconClassName: "message-file-icon"
+  };
+};
+
+function RightPanel({
+  openGroupModal,
+  sharedMedia,
+  isSharedMediaLoading = false,
+  selectedConversationId
+}) {
+  const [isPhotosOpen, setIsPhotosOpen] = useState(true);
+  const [isLinksOpen, setIsLinksOpen] = useState(false);
+  const [isFilesOpen, setIsFilesOpen] = useState(true);
+
+  const photoItems = Array.isArray(sharedMedia?.images) ? sharedMedia.images : [];
+  const fileItems = Array.isArray(sharedMedia?.files) ? sharedMedia.files : [];
+
+  const fileEntries = useMemo(
+    () => fileItems.slice(0, 6),
+    [fileItems]
+  );
+
+  const renderSectionArrow = (isOpen) =>
+    isOpen ? <FaChevronUp className="panel-item-arrow" /> : <FaChevronDown className="panel-item-arrow" />;
+
   return (
     <div className="right-panel">
       <div className="panel-box">
@@ -21,33 +74,113 @@ function RightPanel({ openGroupModal }) {
           <FaTimes className="panel-top-icon" />
         </div>
 
-        <div className="panel-item">
+        <button
+          type="button"
+          className="panel-item panel-item-button"
+          onClick={() => setIsPhotosOpen((prev) => !prev)}
+        >
           <div className="panel-item-left">
             <FaImage className="panel-item-icon dark-icon" />
-            <span>128 Photos</span>
+            <span>{photoItems.length} Photos</span>
           </div>
-          <FaChevronDown className="panel-item-arrow" />
-        </div>
+          {renderSectionArrow(isPhotosOpen)}
+        </button>
+
+        {isPhotosOpen && (
+          <div className="panel-media-content">
+            {!selectedConversationId ? (
+              <p className="panel-empty-state">Select a conversation</p>
+            ) : isSharedMediaLoading ? (
+              <p className="panel-empty-state">Loading photos...</p>
+            ) : photoItems.length === 0 ? (
+              <p className="panel-empty-state">No shared photos</p>
+            ) : (
+              <div className="panel-photo-grid">
+                {photoItems.slice(0, 9).map((item) => (
+                  <a
+                    key={item.id}
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="panel-photo-thumb"
+                    title={item.filename || "Open image"}
+                  >
+                    <img src={item.url} alt={item.filename || "Shared photo"} />
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="panel-divider"></div>
 
-        <div className="panel-item">
+        <button
+          type="button"
+          className="panel-item panel-item-button"
+          onClick={() => setIsLinksOpen((prev) => !prev)}
+        >
           <div className="panel-item-left">
             <FaLink className="panel-item-icon dark-icon" />
-            <span>13 Links</span>
+            <span>Links</span>
           </div>
-          <FaChevronDown className="panel-item-arrow" />
-        </div>
+          {renderSectionArrow(isLinksOpen)}
+        </button>
+
+        {isLinksOpen && (
+          <div className="panel-media-content">
+            <p className="panel-empty-state">Shared links are not available yet</p>
+          </div>
+        )}
 
         <div className="panel-divider"></div>
 
-        <div className="panel-item">
+        <button
+          type="button"
+          className="panel-item panel-item-button"
+          onClick={() => setIsFilesOpen((prev) => !prev)}
+        >
           <div className="panel-item-left">
             <FaFileAlt className="panel-item-icon dark-icon" />
-            <span>72 attachments</span>
+            <span>{fileItems.length} attachments</span>
           </div>
-          <FaChevronDown className="panel-item-arrow" />
-        </div>
+          {renderSectionArrow(isFilesOpen)}
+        </button>
+
+        {isFilesOpen && (
+          <div className="panel-media-content">
+            {!selectedConversationId ? (
+              <p className="panel-empty-state">Select a conversation</p>
+            ) : isSharedMediaLoading ? (
+              <p className="panel-empty-state">Loading attachments...</p>
+            ) : fileItems.length === 0 ? (
+              <p className="panel-empty-state">No shared attachments</p>
+            ) : (
+              <div className="panel-file-list">
+                {fileEntries.map((item) => {
+                  const fileName = item.filename || "Attachment";
+                  const { Icon, iconClassName } = getFilePresentation(fileName);
+
+                  return (
+                    <a
+                      key={item.id}
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="panel-file-item"
+                      title={fileName}
+                    >
+                      <span className={iconClassName} aria-hidden="true">
+                        <Icon />
+                      </span>
+                      <span className="panel-file-name">{fileName}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="panel-box">
