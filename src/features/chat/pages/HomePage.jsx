@@ -1733,8 +1733,24 @@ function HomePage() {
   }, [conversations, socketClient]);
 
   useEffect(() => {
-    return () => {
+    const rejoinConversationRooms = () => {
       joinedConversationIdsRef.current.forEach((conversationId) => {
+        socketClient.emit("join_conversation", conversationId);
+      });
+    };
+
+    socketClient.on("connect", rejoinConversationRooms);
+
+    return () => {
+      socketClient.off("connect", rejoinConversationRooms);
+    };
+  }, [socketClient]);
+
+  useEffect(() => {
+    return () => {
+      const joinedConversationIds = Array.from(joinedConversationIdsRef.current);
+
+      joinedConversationIds.forEach((conversationId) => {
         socketClient.emit("leave_conversation", conversationId);
       });
       joinedConversationIdsRef.current.clear();

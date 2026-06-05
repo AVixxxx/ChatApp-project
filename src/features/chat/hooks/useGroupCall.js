@@ -27,6 +27,17 @@ const JOIN_PHASE = {
 const MAX_GROUP_PARTICIPANTS = 10;
 const ALONE_TIMEOUT_MS = 12000;
 const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+const CALL_DEBUG_ENABLED = true;
+
+const debugCall = (...args) => {
+  if (!CALL_DEBUG_ENABLED) return;
+  console.log("[CallDebug]", ...args);
+};
+
+const warnCall = (...args) => {
+  if (!CALL_DEBUG_ENABLED) return;
+  console.warn("[CallDebug]", ...args);
+};
 
 const getParticipantId = (participant) => {
   if (!participant || typeof participant !== "object") return "";
@@ -112,6 +123,24 @@ export const useGroupCall = ({
     );
   }, [conversationParticipants]);
 
+  const matchesActiveCall = useCallback((currentCallSnapshot, payload = {}) => {
+    if (!currentCallSnapshot) return false;
+
+    const payloadConversationId = String(payload.conversationId || payload.id || "");
+    const currentConversationId = String(currentCallSnapshot.conversationId || "");
+    if (!payloadConversationId || payloadConversationId !== currentConversationId) {
+      return false;
+    }
+
+    const payloadCallId = String(payload.callId || "");
+    const currentCallId = String(currentCallSnapshot.id || "");
+    if (payloadCallId && currentCallId) {
+      return payloadCallId === currentCallId;
+    }
+
+    return true;
+  }, []);
+
   const resetAloneTimer = useCallback(() => {
     if (aloneTimeoutRef.current) {
       clearTimeout(aloneTimeoutRef.current);
@@ -156,6 +185,23 @@ export const useGroupCall = ({
   const sendSignal = useCallback(
     ({ targetUserId, type, ...payload }) => {
       if (!socket || !targetUserId || !type) return;
+
+      if (!socket.connected) {
+        warnCall("emit while socket disconnected", {
+          type,
+          targetUserId,
+          conversationId: payload.conversationId,
+          callId: payload.callId
+        });
+      }
+
+      debugCall("emit", {
+        type,
+        targetUserId,
+        conversationId: payload.conversationId,
+        callId: payload.callId,
+        phase: payload.phase
+      });
 
       socket.emit("call_user", {
         ...payload,
@@ -312,12 +358,24 @@ export const useGroupCall = ({
 
       const existingPeer = peerConnectionsRef.current.get(peerUserId);
       if (existingPeer) {
+        debugCall("reuse peer", {
+          peerUserId,
+          createOffer,
+          signalingState: existingPeer.signalingState,
+          connectionState: existingPeer.connectionState
+        });
+
         if (createOffer && existingPeer.signalingState === "stable") {
           const offer = await existingPeer.createOffer({
             offerToReceiveAudio: true,
             offerToReceiveVideo: true
           });
           await existingPeer.setLocalDescription(offer);
+          debugCall("emit offer from existing peer", {
+            peerUserId,
+            conversationId,
+            callId
+          });
           sendSignal({
             targetUserId: peerUserId,
             type: SIGNAL_TYPES.offer,
@@ -334,6 +392,13 @@ export const useGroupCall = ({
         iceServers: DEFAULT_ICE_SERVERS
       });
 
+      debugCall("create peer", {
+        peerUserId,
+        createOffer,
+        conversationId,
+        callId
+      });
+
       const currentLocalStream = localStreamRef.current;
       if (currentLocalStream) {
         currentLocalStream.getTracks().forEach((track) => {
@@ -343,6 +408,12 @@ export const useGroupCall = ({
 
       peerConnection.onicecandidate = (event) => {
         if (!event.candidate) return;
+
+        debugCall("emit ice", {
+          peerUserId,
+          conversationId,
+          callId
+        });
 
         sendSignal({
           targetUserId: peerUserId,
@@ -358,6 +429,11 @@ export const useGroupCall = ({
         if (!stream) return;
 
         remoteStreamsRef.current.set(peerUserId, stream);
+        debugCall("remote stream attached", {
+          peerUserId,
+          conversationId,
+          callId
+        });
         updateRemoteParticipant(peerUserId, (participant) => ({
           ...participant,
           userId: peerUserId,
@@ -374,6 +450,12 @@ export const useGroupCall = ({
 
       peerConnection.onconnectionstatechange = () => {
         const state = peerConnection.connectionState;
+        debugCall("connection state", {
+          peerUserId,
+          state,
+          iceConnectionState: peerConnection.iceConnectionState,
+          signalingState: peerConnection.signalingState
+        });
 
         if (state === "connected") {
           updateRemoteParticipant(peerUserId, (participant) => ({
@@ -397,6 +479,22 @@ export const useGroupCall = ({
         }
       };
 
+      peerConnection.oniceconnectionstatechange = () => {
+        debugCall("ice connection state", {
+          peerUserId,
+          state: peerConnection.iceConnectionState,
+          signalingState: peerConnection.signalingState
+        });
+      };
+
+      peerConnection.onsignalingstatechange = () => {
+        debugCall("signaling state", {
+          peerUserId,
+          state: peerConnection.signalingState,
+          iceConnectionState: peerConnection.iceConnectionState
+        });
+      };
+
       peerConnectionsRef.current.set(peerUserId, peerConnection);
 
       updateRemoteParticipant(peerUserId, (participant) => ({
@@ -416,6 +514,11 @@ export const useGroupCall = ({
           offerToReceiveVideo: true
         });
         await peerConnection.setLocalDescription(offer);
+        debugCall("emit offer", {
+          peerUserId,
+          conversationId,
+          callId
+        });
         sendSignal({
           targetUserId: peerUserId,
           type: SIGNAL_TYPES.offer,
@@ -470,6 +573,12 @@ export const useGroupCall = ({
         const stream = await ensureMediaPermissions(mode);
         const callId = globalThis.crypto?.randomUUID?.() || `call-${Date.now()}`;
         const startedAt = new Date().toISOString();
+        debugCall("start call", {
+          conversationId: currentConversation.id,
+          callId,
+          invitedParticipants: invitedParticipants.map((participant) => participant.userId),
+          mode
+        });
 
         setLocalStream(createStreamSnapshot(stream));
         setRemoteParticipants(invitedParticipants.map(normalizeRemoteParticipant));
@@ -529,6 +638,11 @@ export const useGroupCall = ({
     try {
       await ensureMediaPermissions(currentCallSnapshot.mode || "video");
       setCallPhase(CALL_PHASE.connecting);
+      debugCall("accept incoming call", {
+        conversationId: currentCallSnapshot.conversationId,
+        callId: currentCallSnapshot.id,
+        createdBy: currentCallSnapshot.createdBy
+      });
 
       updateRemoteParticipant(currentCallSnapshot.createdBy, (participant) => ({
         ...participant,
@@ -595,7 +709,15 @@ export const useGroupCall = ({
   useEffect(() => {
     if (!socket) return undefined;
 
-    const handleIncomingSignal = async (payload = {}) => {
+    const handleSignalEvent = async (eventName, rawPayload = {}) => {
+      const payload =
+        eventName === "incoming_call"
+          ? rawPayload
+          : {
+              ...rawPayload,
+              type: rawPayload?.type || eventName
+            };
+
       if (!payload?.type) return;
       if (!payload?.conversationId || payload.conversationId !== currentConversation?.id) {
         return;
@@ -603,6 +725,15 @@ export const useGroupCall = ({
 
       const fromUserId = String(payload.fromUserId || payload.callerId || "");
       if (!fromUserId || fromUserId === selfUserId) return;
+
+      debugCall("receive signal", {
+        eventName,
+        type: payload.type,
+        fromUserId,
+        conversationId: payload.conversationId,
+        callId: payload.callId,
+        phase: payload.phase
+      });
 
       if (payload.type === SIGNAL_TYPES.join && payload.phase === JOIN_PHASE.invite) {
         const invitedIds = Array.isArray(payload.participants)
@@ -642,7 +773,16 @@ export const useGroupCall = ({
       }
 
       const currentCallSnapshot = activeCallRef.current;
-      if (!currentCallSnapshot || payload.callId !== currentCallSnapshot.id) {
+      if (!matchesActiveCall(currentCallSnapshot, payload)) {
+        warnCall("drop signal: no matching active call", {
+          eventName,
+          type: payload.type,
+          fromUserId,
+          payloadCallId: payload.callId,
+          payloadConversationId: payload.conversationId,
+          activeCallId: currentCallSnapshot?.id,
+          activeConversationId: currentCallSnapshot?.conversationId
+        });
         return;
       }
 
@@ -731,13 +871,25 @@ export const useGroupCall = ({
           createOffer: false
         });
 
-        if (!peerConnection || !payload.sdp) return;
+        const remoteSdp = payload.sdp || payload.signal;
+        if (!peerConnection || !remoteSdp) return;
 
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        debugCall("receive offer", {
+          fromUserId,
+          conversationId: currentCallSnapshot.conversationId,
+          callId: currentCallSnapshot.id
+        });
+
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(remoteSdp));
         await flushQueuedIceCandidates(fromUserId, peerConnection);
 
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
+        debugCall("emit answer", {
+          targetUserId: fromUserId,
+          conversationId: currentCallSnapshot.conversationId,
+          callId: currentCallSnapshot.id
+        });
 
         sendSignal({
           targetUserId: fromUserId,
@@ -751,9 +903,16 @@ export const useGroupCall = ({
 
       if (payload.type === SIGNAL_TYPES.answer) {
         const peerConnection = peerConnectionsRef.current.get(fromUserId);
-        if (!peerConnection || !payload.sdp) return;
+        const remoteSdp = payload.sdp || payload.signal;
+        if (!peerConnection || !remoteSdp) return;
 
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        debugCall("receive answer", {
+          fromUserId,
+          conversationId: currentCallSnapshot.conversationId,
+          callId: currentCallSnapshot.id
+        });
+
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(remoteSdp));
         await flushQueuedIceCandidates(fromUserId, peerConnection);
         setCallPhase(CALL_PHASE.active);
         return;
@@ -765,10 +924,20 @@ export const useGroupCall = ({
 
         if (!peerConnection || !peerConnection.remoteDescription) {
           queueIceCandidate(fromUserId, payload.candidate);
+          debugCall("queue ice", {
+            fromUserId,
+            conversationId: currentCallSnapshot.conversationId,
+            callId: currentCallSnapshot.id
+          });
           return;
         }
 
         try {
+          debugCall("receive ice", {
+            fromUserId,
+            conversationId: currentCallSnapshot.conversationId,
+            callId: currentCallSnapshot.id
+          });
           await peerConnection.addIceCandidate(new RTCIceCandidate(payload.candidate));
         } catch (error) {
           console.error("Failed to add ICE candidate:", error);
@@ -777,9 +946,23 @@ export const useGroupCall = ({
       }
 
       if (payload.type === SIGNAL_TYPES.leave) {
+        debugCall("receive leave", {
+          fromUserId,
+          conversationId: currentCallSnapshot.conversationId,
+          callId: currentCallSnapshot.id
+        });
         closePeerConnection(fromUserId);
       }
     };
+
+    const handleIncomingSignal = (payload = {}) =>
+      handleSignalEvent("incoming_call", payload);
+    const handleOffer = (payload = {}) =>
+      handleSignalEvent(SIGNAL_TYPES.offer, payload);
+    const handleAnswer = (payload = {}) =>
+      handleSignalEvent(SIGNAL_TYPES.answer, payload);
+    const handleIceCandidate = (payload = {}) =>
+      handleSignalEvent(SIGNAL_TYPES.iceCandidate, payload);
 
     const handleRoomEnded = (payload = {}) => {
       const currentCallSnapshot = activeCallRef.current;
@@ -792,11 +975,47 @@ export const useGroupCall = ({
       endCall({ notifyPeers: false });
     };
 
+    const handleSocketConnect = () => {
+      debugCall("socket connected", {
+        socketId: socket.id,
+        conversationId: currentConversation?.id || null
+      });
+    };
+
+    const handleSocketDisconnect = (reason) => {
+      warnCall("socket disconnected", {
+        reason,
+        conversationId: currentConversation?.id || null
+      });
+    };
+
+    const handleSocketReconnect = (attempt) => {
+      debugCall("socket reconnected", {
+        attempt,
+        socketId: socket.id,
+        conversationId: currentConversation?.id || null
+      });
+    };
+
+    socket.on("connect", handleSocketConnect);
+    socket.on("disconnect", handleSocketDisconnect);
+    socket.io.on("reconnect", handleSocketReconnect);
     socket.on("incoming_call", handleIncomingSignal);
+    socket.on(SIGNAL_TYPES.offer, handleOffer);
+    socket.on(SIGNAL_TYPES.answer, handleAnswer);
+    socket.on(SIGNAL_TYPES.iceCandidate, handleIceCandidate);
+    socket.on("end_call", handleRoomEnded);
     socket.on("call_ended", handleRoomEnded);
 
     return () => {
+      socket.off("connect", handleSocketConnect);
+      socket.off("disconnect", handleSocketDisconnect);
+      socket.io.off("reconnect", handleSocketReconnect);
       socket.off("incoming_call", handleIncomingSignal);
+      socket.off(SIGNAL_TYPES.offer, handleOffer);
+      socket.off(SIGNAL_TYPES.answer, handleAnswer);
+      socket.off(SIGNAL_TYPES.iceCandidate, handleIceCandidate);
+      socket.off("end_call", handleRoomEnded);
       socket.off("call_ended", handleRoomEnded);
     };
   }, [
@@ -808,6 +1027,7 @@ export const useGroupCall = ({
     endCall,
     flushQueuedIceCandidates,
     getJoinedRemoteParticipantIds,
+    matchesActiveCall,
     participantDirectory,
     queueIceCandidate,
     selfUserId,
