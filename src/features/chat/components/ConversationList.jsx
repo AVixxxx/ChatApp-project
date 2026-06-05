@@ -104,83 +104,85 @@ function ConversationList({
         </div>
       </div>
 
-      {conversations.length === 0 ? (
-        <p className="empty-text">No conversations yet.</p>
-      ) : filteredConversations.length === 0 ? (
-        <p className="empty-text">No matching conversations.</p>
-      ) : (
-        filteredConversations.map((conversation) => {
-          const unreadCount = Number(getUnreadCount?.(conversation) || 0);
-          const isPinned = Boolean(conversation?.isPinned ?? conversation?.is_pinned ?? false);
-          const pinLoading = Boolean(pinActionLoadingByConversationId?.[conversation?.id]);
+      <div className="conversation-list-scroll">
+        {conversations.length === 0 ? (
+          <p className="empty-text">No conversations yet.</p>
+        ) : filteredConversations.length === 0 ? (
+          <p className="empty-text">No matching conversations.</p>
+        ) : (
+          filteredConversations.map((conversation) => {
+            const unreadCount = Number(getUnreadCount?.(conversation) || 0);
+            const isPinned = Boolean(conversation?.isPinned ?? conversation?.is_pinned ?? false);
+            const pinLoading = Boolean(pinActionLoadingByConversationId?.[conversation?.id]);
 
-          return (
-            <div
-              key={conversation.id}
-              className={`conversation ${
-                selectedConversationId === conversation.id ? "selected" : ""
-              }`}
-              onClick={() => onSelectConversation(conversation.id)}
-            >
-            <button
-              type="button"
-              className="conversation-avatar-btn"
-              onClick={(event) => {
-                event.stopPropagation();
-                onAvatarClick?.(conversation);
-              }}
-              aria-label={`View profile of ${getConversationDisplayName(conversation)}`}
-            >
-              <img src={getConversationAvatar(conversation)} alt="conversation" />
-            </button>
-            <div className="conversation-content">
-              <div className="conversation-top">
-                <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                  <h4>{getConversationDisplayName(conversation)}</h4>
-                  <button
-                    type="button"
-                    className={`conversation-pin-btn ${isPinned ? "pinned" : ""}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onTogglePinConversation?.(conversation);
-                    }}
-                    title={isPinned ? "Unpin conversation" : "Pin conversation"}
-                    aria-label={isPinned ? "Unpin conversation" : "Pin conversation"}
-                  >
-                    {pinLoading ? <FaSpinner className="spin" /> : <FaThumbtack />}
-                  </button>
+            return (
+              <div
+                key={conversation.id}
+                className={`conversation ${
+                  selectedConversationId === conversation.id ? "selected" : ""
+                }`}
+                onClick={() => onSelectConversation(conversation.id)}
+              >
+              <button
+                type="button"
+                className="conversation-avatar-btn"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onAvatarClick?.(conversation);
+                }}
+                aria-label={`View profile of ${getConversationDisplayName(conversation)}`}
+              >
+                <img src={getConversationAvatar(conversation)} alt="conversation" />
+              </button>
+              <div className="conversation-content">
+                <div className="conversation-top">
+                  <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
+                    <h4>{getConversationDisplayName(conversation)}</h4>
+                    <button
+                      type="button"
+                      className={`conversation-pin-btn ${isPinned ? "pinned" : ""}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onTogglePinConversation?.(conversation);
+                      }}
+                      title={isPinned ? "Unpin conversation" : "Pin conversation"}
+                      aria-label={isPinned ? "Unpin conversation" : "Pin conversation"}
+                    >
+                      {pinLoading ? <FaSpinner className="spin" /> : <FaThumbtack />}
+                    </button>
+                  </div>
+                  <div className="conversation-meta">
+                    <span className="conversation-time">
+                      {formatConversationTime(conversation.lastMessageTime)}
+                    </span>
+                    {unreadCount > 0 && (
+                      <span className="unread-badge" aria-label={`${unreadCount} unread messages`}>
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="conversation-meta">
-                  <span className="conversation-time">
-                    {formatConversationTime(conversation.lastMessageTime)}
-                  </span>
-                  {unreadCount > 0 && (
-                    <span className="unread-badge" aria-label={`${unreadCount} unread messages`}>
-                      {unreadCount > 99 ? "99+" : unreadCount}
+                <div className="conversation-bottom">
+                  <p>{getConversationPreview(conversation)}</p>
+                  {!conversation.isGroup && (
+                    <span
+                      className={`conversation-status ${
+                        getConversationStatusText(conversation) === "Online"
+                          ? "online"
+                          : "offline"
+                      }`}
+                    >
+                      <span className="status-dot" aria-hidden="true" />
+                      {getConversationStatusText(conversation)}
                     </span>
                   )}
                 </div>
               </div>
-              <div className="conversation-bottom">
-                <p>{getConversationPreview(conversation)}</p>
-                {!conversation.isGroup && (
-                  <span
-                    className={`conversation-status ${
-                      getConversationStatusText(conversation) === "Online"
-                        ? "online"
-                        : "offline"
-                    }`}
-                  >
-                    <span className="status-dot" aria-hidden="true" />
-                    {getConversationStatusText(conversation)}
-                  </span>
-                )}
               </div>
-            </div>
-            </div>
-          );
-        })
-      )}
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

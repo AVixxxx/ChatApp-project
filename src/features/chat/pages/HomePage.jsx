@@ -25,7 +25,8 @@ import {
   sendMessage,
   recallMessage as recallMessageApi,
   deleteMessage as deleteMessageApi,
-  normalizeMessage
+  normalizeMessage,
+  FORWARDED_CONTENT_MARKER
 } from "@/features/chat/services/messageService";
 import { findAccount } from "@/features/auth/services/authService";
 import { sendFriendRequest, unfriendFriend } from "@/features/contacts/services/friendService";
@@ -56,6 +57,7 @@ import CallParticipantModal from "@/features/chat/components/CallParticipantModa
 import ActionDialog from "@/features/chat/components/ActionDialog";
 import JoinByCodeModal from "@/features/chat/components/JoinByCodeModal";
 import GroupJoinCodeModal from "@/features/chat/components/GroupJoinCodeModal";
+import ForwardMessageModal from "@/features/chat/components/ForwardMessageModal";
 
 const getEntityId = (entity) => {
   if (!entity || typeof entity !== "object") return null;
@@ -130,6 +132,8 @@ const parseOnlineValue = (value) => {
 const HOME_CONVERSATIONS_CACHE_KEY = "homeConversationsCacheV1";
 const HOME_CONVERSATIONS_CACHE_TTL_MS = 5 * 60 * 1000;
 const MESSAGE_PAGE_SIZE = 30;
+const buildForwardedContent = (text = "") =>
+  `${FORWARDED_CONTENT_MARKER}${String(text || "")}`;
 
 const readHomeConversationsCache = () => {
   try {
@@ -256,8 +260,13 @@ function HomePage() {
   const [pendingCallMode, setPendingCallMode] = useState("video");
   const [callParticipantError, setCallParticipantError] = useState("");
   const [isStartingSelectedCall, setIsStartingSelectedCall] = useState(false);
+  const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
+  const [forwardTargetConversationIds, setForwardTargetConversationIds] = useState([]);
+  const [forwardingMessage, setForwardingMessage] = useState(null);
+  const [forwardError, setForwardError] = useState("");
+  const [isForwardingMessage, setIsForwardingMessage] = useState(false);
   const [pinActionLoadingByConversationId, setPinActionLoadingByConversationId] = useState({});
-  const [pinToast, setPinToast] = useState(null);
+  const [, setPinToast] = useState(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState(null);
   const [isCreatingPoll, setIsCreatingPoll] = useState(false);
   const [votingPollId, setVotingPollId] = useState("");
@@ -701,6 +710,41 @@ function HomePage() {
     });
 
     setSelectedConversationId(createdConversation.id);
+    return createdConversation.id;
+  };
+
+  const resolveConversationTargetByConversation = async (conversation) => {
+    const targetConversationId = getSafeId(conversation?.id);
+    if (!targetConversationId) {
+      return null;
+    }
+
+    if (!isVirtualConversationId(targetConversationId)) {
+      return targetConversationId;
+    }
+
+    const otherMember = Array.isArray(conversation?.members)
+      ? conversation.members.find(
+          (member) => getSafeId(getUserId(member)) !== getSafeId(user?.id)
+        )
+      : null;
+
+    const friendId =
+      getSafeId(conversation?.friendId) ||
+      getSafeId(getUserId(otherMember));
+
+    if (!friendId) {
+      console.error("Missing friend id for virtual forward conversation");
+      return null;
+    }
+
+    const createdConversation = await createPrivateConversation([friendId]);
+
+    setConversations((prev) => {
+      const filtered = prev.filter((item) => item.id !== targetConversationId);
+      return sortConversationsByPinAndActivity([createdConversation, ...filtered]);
+    });
+
     return createdConversation.id;
   };
 
@@ -2545,6 +2589,13 @@ function HomePage() {
         .includes(searchTerm.toLowerCase().trim())
     );
 
+  const forwardEligibleConversations = sortConversationsByPinAndActivity(conversations)
+    .filter((conversation) => getSafeId(conversation?.id))
+    .filter(
+      (conversation, index, self) =>
+        index === self.findIndex((item) => getSafeId(item?.id) === getSafeId(conversation?.id))
+    );
+
   const sidebarAvatar = getAvatarUrl(user);
   const headerAvatar = currentConversation
     ? getConversationAvatar(currentConversation)
@@ -3052,6 +3103,173 @@ function HomePage() {
     }
   };
 
+  const toggleForwardTargetConversation = (conversationId) => {
+    setForwardError("");
+    setForwardTargetConversationIds((prev) =>
+      prev.includes(conversationId)
+        ? prev.filter((id) => id !== conversationId)
+        : [...prev, conversationId]
+    );
+  };
+
+  const closeForwardModal = () => {
+    if (isForwardingMessage) return;
+    setIsForwardModalOpen(false);
+    setForwardTargetConversationIds([]);
+    setForwardingMessage(null);
+    setForwardError("");
+  };
+
+  const handleOpenForwardMessage = (message) => {
+    if (!message) return;
+    setForwardingMessage(message);
+    setForwardTargetConversationIds([]);
+    setForwardError("");
+    setIsForwardModalOpen(true);
+  };
+
+  const getForwardAttachmentUrl = (message) =>
+    message?.imageUrl || message?.fileUrl || message?.file_url || "";
+
+  const normalizeForwardAttachmentUrl = (rawUrl) => {
+    if (!rawUrl) return "";
+
+    try {
+      const parsedUrl = new URL(rawUrl);
+      parsedUrl.protocol = "https:";
+      return parsedUrl.toString();
+    } catch {
+      return String(rawUrl).replace(/^http:\/\//i, "https://");
+    }
+  };
+
+  const getForwardAttachmentName = (message, attachmentUrl, index) => {
+    const explicitName = String(message?.text || "").trim();
+    if (explicitName) {
+      return explicitName;
+    }
+
+    try {
+      const pathname = new URL(attachmentUrl).pathname;
+      const rawName = pathname.split("/").pop();
+      if (rawName) {
+        return decodeURIComponent(rawName);
+      }
+    } catch {
+      // Ignore and fallback.
+    }
+
+    const type =
+      message?.type ||
+      message?.messageType ||
+      message?.message_type ||
+      "file";
+
+    return `${type}-${index + 1}`;
+  };
+
+  const createForwardFileFromMessage = async (message, index) => {
+    const attachmentUrl = normalizeForwardAttachmentUrl(getForwardAttachmentUrl(message));
+    if (!attachmentUrl) {
+      return null;
+    }
+
+    const response = await fetch(attachmentUrl, {
+      mode: "cors",
+      credentials: "omit"
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch forwarded attachment: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const fileName = getForwardAttachmentName(message, attachmentUrl, index);
+
+    return new File([blob], fileName, {
+      type: blob.type || "application/octet-stream",
+      lastModified: Date.now()
+    });
+  };
+
+  const handleForwardMessage = async () => {
+    if (!forwardingMessage) return;
+
+    if (forwardTargetConversationIds.length === 0) {
+      setForwardError("Hãy chọn ít nhất 1 cuộc trò chuyện.");
+      return;
+    }
+
+    const groupedItems = Array.isArray(forwardingMessage.groupedItems)
+      ? forwardingMessage.groupedItems.filter(Boolean)
+      : [];
+    const sourceMessages = groupedItems.length > 0 ? groupedItems : [forwardingMessage];
+    const sourceMessageType =
+      forwardingMessage?.type ||
+      forwardingMessage?.messageType ||
+      forwardingMessage?.message_type ||
+      (forwardingMessage?.fileUrl || forwardingMessage?.file_url ? "file" : "text");
+    try {
+      setIsForwardingMessage(true);
+      setForwardError("");
+
+      const forwardedFiles =
+        sourceMessageType === "image" || sourceMessageType === "file"
+          ? (
+              await Promise.all(
+                sourceMessages.map((item, index) => createForwardFileFromMessage(item, index))
+              )
+            ).filter(Boolean)
+          : [];
+
+      if (
+        (sourceMessageType === "image" || sourceMessageType === "file") &&
+        forwardedFiles.length === 0
+      ) {
+        throw new Error("No forwardable attachments found");
+      }
+
+      for (const conversationId of forwardTargetConversationIds) {
+        const targetConversation = conversations.find(
+          (conversation) => getSafeId(conversation?.id) === getSafeId(conversationId)
+        );
+
+        if (!targetConversation) continue;
+
+        const resolvedConversationId =
+          await resolveConversationTargetByConversation(targetConversation);
+
+        if (!resolvedConversationId) continue;
+
+        if (sourceMessageType === "image" || sourceMessageType === "file") {
+          await sendMessage({
+            conversationId: resolvedConversationId,
+            text: buildForwardedContent(""),
+            messageType: sourceMessageType,
+            files: forwardedFiles
+          });
+          continue;
+        }
+
+        await sendMessage({
+          conversationId: resolvedConversationId,
+          text: buildForwardedContent(forwardingMessage?.text || ""),
+          messageType: "text"
+        });
+      }
+
+      setIsForwardModalOpen(false);
+      setForwardTargetConversationIds([]);
+      setForwardingMessage(null);
+      setForwardError("");
+    } catch (error) {
+      console.error("Failed to forward message:", error);
+      setForwardError("Không thể chuyển tiếp tin nhắn lúc này.");
+    } finally {
+      setIsForwardingMessage(false);
+    }
+  };
+
   const openAddFriendModal = () => {
     setIsAddFriendModalOpen(true);
     setAddFriendKeyword("");
@@ -3379,6 +3597,7 @@ function HomePage() {
         handleRecallMessageGroup={handleRecallMessageGroup}
         handleDeleteMessage={handleDeleteMessage}
         handleDeleteMessageGroup={handleDeleteMessageGroup}
+        onForwardMessage={handleOpenForwardMessage}
         onStartAudioCall={() => handleRequestStartCall("audio")}
         onStartVideoCall={() => handleRequestStartCall("video")}
         onOpenAddMembers={openAddMembersModal}
@@ -3496,6 +3715,19 @@ function HomePage() {
         onConfirm={handleConfirmStartSelectedCall}
         isSubmitting={isStartingSelectedCall}
         errorMessage={callParticipantError}
+      />
+
+      <ForwardMessageModal
+        isOpen={isForwardModalOpen}
+        conversations={forwardEligibleConversations}
+        selectedConversationIds={forwardTargetConversationIds}
+        onToggleConversation={toggleForwardTargetConversation}
+        onClose={closeForwardModal}
+        onConfirm={handleForwardMessage}
+        getConversationAvatar={getConversationAvatar}
+        getConversationDisplayName={getConversationDisplayName}
+        isSubmitting={isForwardingMessage}
+        errorMessage={forwardError}
       />
 
       <ActionDialog

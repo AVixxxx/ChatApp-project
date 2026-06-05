@@ -9,6 +9,7 @@ const chatApi = axios.create({
 const MESSAGE_API_PATH = "/api/messages";
 const MESSAGE_API_FALLBACK_PATH = "/api/message";
 const RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504]);
+export const FORWARDED_CONTENT_MARKER = "[[FORWARDED]]";
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");
@@ -17,19 +18,37 @@ const getAuthHeaders = () => {
 
 const normalizeUser = (user) => normalizeUserEntity(user);
 
+const stripForwardedMarker = (value) => {
+  const rawValue = String(value || "");
+
+  if (!rawValue.startsWith(FORWARDED_CONTENT_MARKER)) {
+    return {
+      isForwarded: false,
+      content: rawValue
+    };
+  }
+
+  return {
+    isForwarded: true,
+    content: rawValue.slice(FORWARDED_CONTENT_MARKER.length)
+  };
+};
+
 const normalizeMessage = (message) => {
   if (!message || typeof message !== "object") return message;
 
   const isRecalled = Boolean(message.isRecalled ?? message.is_recalled);
+  const rawText =
+    message.text ||
+    message.content ||
+    message.message ||
+    message.last_message ||
+    "";
+  const forwardedState = stripForwardedMarker(rawText);
 
-  const text =
-    isRecalled
-      ? "[Tin nhắn đã được thu hồi]"
-      : message.text ||
-        message.content ||
-        message.message ||
-        message.last_message ||
-        "";
+  const text = isRecalled
+    ? "[Tin nhắn đã được thu hồi]"
+    : forwardedState.content;
 
   const hasFileUrl = Boolean(message.file_url || message.fileUrl);
   const rawMessageType =
@@ -55,6 +74,8 @@ const normalizeMessage = (message) => {
     imageUrl,
     fileUrl: imageUrl,
     file_url: imageUrl,
+    isForwarded: Boolean(message.isForwarded ?? message.is_forwarded ?? forwardedState.isForwarded),
+    is_forwarded: Boolean(message.isForwarded ?? message.is_forwarded ?? forwardedState.isForwarded),
     isRecalled,
     is_recalled: isRecalled,
     sender:
@@ -76,26 +97,6 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const shouldRetryUploadRequest = (error) => {
   const status = error?.response?.status;
   return RETRYABLE_STATUSES.has(status);
-};
-
-const createMessageUploadFormData = (messageData) => {
-  const formData = new FormData();
-  formData.append("conversation_id", messageData?.conversationId || "");
-  formData.append("content", messageData?.text || messageData?.content || "");
-  formData.append("message_type", messageData?.messageType || "file");
-
-  const parentId = messageData?.parent_id || messageData?.parentId;
-  if (parentId) {
-    formData.append("parent_id", parentId);
-  }
-
-  (Array.isArray(messageData?.files) ? messageData.files : []).forEach((file) => {
-    const safeFile = createSafeUploadFile(file);
-
-    formData.append("files", safeFile, safeFile.name);
-  });
-
-  return formData;
 };
 
 const sanitizeUploadFileName = (fileName) => {
@@ -142,6 +143,31 @@ const createSafeUploadFile = (file) => {
     type: file.type,
     lastModified: file.lastModified
   });
+};
+
+const createMessageUploadFormData = (messageData) => {
+  const formData = new FormData();
+  formData.append("conversation_id", messageData?.conversationId || "");
+  formData.append("content", messageData?.text || messageData?.content || "");
+  formData.append("message_type", messageData?.messageType || "file");
+
+  const parentId = messageData?.parent_id || messageData?.parentId;
+  if (parentId) {
+    formData.append("parent_id", parentId);
+  }
+
+  (Array.isArray(messageData?.files) ? messageData.files : []).forEach((file) => {
+    const safeFile = createSafeUploadFile(file);
+    formData.append("files", safeFile, safeFile.name);
+  });
+
+  (Array.isArray(messageData?.fileUrls) ? messageData.fileUrls : []).forEach((fileUrl) => {
+    if (fileUrl) {
+      formData.append("fileUrls", fileUrl);
+    }
+  });
+
+  return formData;
 };
 
 const uploadMultipartMessage = async (messageData, maxAttemptsPerPath = 2) => {
@@ -217,7 +243,6 @@ const toBackendCursor = (cursor) => {
     return null;
   }
 
-  // Backend compares against TIMESTAMP (without timezone), so send a neutral format.
   return parsed.toISOString().replace("T", " ").replace("Z", "");
 };
 
@@ -291,12 +316,13 @@ export const getAllMessagesByConversation = async (conversationId) => {
 
 export const sendMessage = async (messageData) => {
   const hasFiles = Array.isArray(messageData?.files) && messageData.files.length > 0;
+  const hasForwardedUrls = Array.isArray(messageData?.fileUrls) && messageData.fileUrls.length > 0;
   const messageType = messageData?.messageType || (hasFiles ? "image" : "text");
   const parentId = messageData?.parent_id || messageData?.parentId;
 
   let response;
 
-  if (hasFiles) {
+  if (hasFiles || hasForwardedUrls) {
     response = await uploadMultipartMessage({
       ...messageData,
       messageType
@@ -317,10 +343,13 @@ export const sendMessage = async (messageData) => {
   }
 
   const responsePayload = Array.isArray(response.data)
-    ? response.data[0]
-    : response.data;
+    ? response.data
+    : response.data
+      ? [response.data]
+      : [];
 
-  return normalizeMessage(responsePayload);
+  const normalizedMessages = responsePayload.map(normalizeMessage);
+  return normalizedMessages.length <= 1 ? normalizedMessages[0] || null : normalizedMessages;
 };
 
 export const sendImageMessage = async ({ conversationId, files = [] }) => {

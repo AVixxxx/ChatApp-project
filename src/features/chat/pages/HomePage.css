@@ -102,6 +102,9 @@
   border-radius: 18px;
   padding: 16px 0 16px 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .conversation-search-toolbar {
@@ -109,6 +112,39 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
+}
+
+.conversation-list-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 6px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(55, 81, 163, 0.35) transparent;
+}
+
+.conversation-list-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.conversation-list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.conversation-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(55, 81, 163, 0.24);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.conversation-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(55, 81, 163, 0.4);
+  background-clip: padding-box;
 }
 
 .search-box {
@@ -854,6 +890,17 @@
 
 .message p {
   margin: 0;
+}
+
+.message-forwarded-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #5b6785;
 }
 
 .message-recalled {
@@ -2180,6 +2227,151 @@
   color: #3b6df6;
   padding: 2px 8px;
   border-radius: 999px;
+}
+
+.forward-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(0, 0, 0, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.forward-modal {
+  width: 460px;
+  max-width: 100%;
+  max-height: min(80vh, 760px);
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.forward-modal-header,
+.forward-modal-footer {
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.forward-modal-footer {
+  border-bottom: none;
+  border-top: 1px solid #edf0f5;
+  justify-content: flex-end;
+}
+
+.forward-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.forward-modal-close {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.forward-modal-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.forward-search-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f6f7fb;
+  border: 1px solid #e6ebf2;
+  border-radius: 12px;
+  padding: 0 12px;
+  height: 44px;
+}
+
+.forward-search-icon {
+  color: #7b8798;
+  font-size: 13px;
+}
+
+.forward-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 14px;
+}
+
+.forward-conversation-list {
+  min-height: 0;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(55, 81, 163, 0.35) transparent;
+}
+
+.forward-conversation-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.forward-conversation-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.forward-conversation-list::-webkit-scrollbar-thumb {
+  background: rgba(55, 81, 163, 0.24);
+  border-radius: 999px;
+}
+
+.forward-conversation-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 6px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.forward-conversation-item:hover {
+  background: #f7f9fc;
+}
+
+.forward-conversation-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.forward-conversation-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.forward-conversation-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.forward-conversation-type {
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .group-info-transfer-btn {

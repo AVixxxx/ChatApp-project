@@ -13,6 +13,7 @@ function MessageActions({
   onCopyImage,
   onDownloadImage,
   onDownloadFile,
+  onForwardMessage,
   onRecallMessage,
   onRecallMessageGroup,
   onDeleteMessage,
@@ -36,10 +37,29 @@ function MessageActions({
     };
   }, [isOpen, onClose]);
 
-  const messageType = message?.type || message?.messageType || message?.message_type || (message?.fileUrl || message?.file_url ? "file" : "text");
+  const messageType =
+    message?.type ||
+    message?.messageType ||
+    message?.message_type ||
+    (message?.fileUrl || message?.file_url ? "file" : "text");
   const groupedItems = Array.isArray(message?.groupedItems) ? message.groupedItems : [];
   const hasGroupedItems = groupedItems.length > 1;
   const isRecalled = Boolean(message?.isRecalled ?? message?.is_recalled);
+
+  const closeAfter = (handler) => () => {
+    handler?.(message);
+    onClose?.();
+  };
+
+  const forwardButton = (
+    <button
+      type="button"
+      className="message-action-item"
+      onClick={closeAfter(onForwardMessage)}
+    >
+      Chuyển tiếp
+    </button>
+  );
 
   return (
     <div className="message-actions-wrap" ref={menuRef}>
@@ -62,10 +82,7 @@ function MessageActions({
               <button
                 type="button"
                 className="message-action-item"
-                onClick={() => {
-                  onDeleteMessage?.(message);
-                  onClose?.();
-                }}
+                onClick={closeAfter(onDeleteMessage)}
               >
                 Xóa với tôi
               </button>
@@ -75,207 +92,159 @@ function MessageActions({
               <button
                 type="button"
                 className="message-action-item"
-                onClick={() => {
-                  onReplyMessage?.(message);
-                  onClose?.();
-                }}
+                onClick={closeAfter(onReplyMessage)}
               >
                 Trả lời
               </button>
               <button
                 type="button"
                 className="message-action-item"
-                onClick={() => {
-                  onCopyImage?.(message);
-                  onClose?.();
-                }}
+                onClick={closeAfter(onCopyImage)}
               >
                 Sao chép ảnh
               </button>
               <button
                 type="button"
                 className="message-action-item"
-                onClick={() => {
-                  onDownloadImage?.(message);
-                  onClose?.();
-                }}
+                onClick={closeAfter(onDownloadImage)}
               >
                 Tải ảnh xuống
               </button>
-              {canRecall && (
+              {forwardButton}
+              {canRecall ? (
                 <>
                   <button
                     type="button"
                     className="message-action-item"
-                    onClick={() => {
-                      onRecallMessage?.(message);
-                      onClose?.();
-                    }}
+                    onClick={closeAfter(onRecallMessage)}
                   >
                     Thu hồi ảnh
                   </button>
-                  {hasGroupedItems && (
+                  {hasGroupedItems ? (
                     <button
                       type="button"
                       className="message-action-item"
-                      onClick={() => {
-                        onRecallMessageGroup?.(message);
-                        onClose?.();
-                      }}
+                      onClick={closeAfter(onRecallMessageGroup)}
                     >
                       Thu hồi tất cả ảnh
                     </button>
-                  )}
+                  ) : null}
                 </>
-              )}
-              {canDeleteForMe && (
+              ) : null}
+              {canDeleteForMe ? (
                 <>
                   <button
                     type="button"
                     className="message-action-item"
-                    onClick={() => {
-                      onDeleteMessage?.(message);
-                      onClose?.();
-                    }}
+                    onClick={closeAfter(onDeleteMessage)}
                   >
                     Xóa ảnh với tôi
                   </button>
-                  {hasGroupedItems && (
+                  {hasGroupedItems ? (
                     <button
                       type="button"
                       className="message-action-item"
-                      onClick={() => {
-                        onDeleteMessageGroup?.(message);
-                        onClose?.();
-                      }}
+                      onClick={closeAfter(onDeleteMessageGroup)}
                     >
                       Xóa tất cả ảnh với tôi
                     </button>
-                  )}
+                  ) : null}
                 </>
-              )}
+              ) : null}
             </>
           ) : messageType === "file" ? (
             <>
               <button
                 type="button"
                 className="message-action-item"
-                onClick={() => {
-                  onReplyMessage?.(message);
-                  onClose?.();
-                }}
+                onClick={closeAfter(onReplyMessage)}
               >
                 Trả lời
               </button>
               <button
                 type="button"
                 className="message-action-item"
-                onClick={() => {
-                  onDownloadFile?.(message);
-                  onClose?.();
-                }}
+                onClick={closeAfter(onDownloadFile)}
               >
                 Tải tệp xuống
               </button>
-              {canRecall && (
+              {forwardButton}
+              {canRecall ? (
                 <>
                   <button
                     type="button"
                     className="message-action-item"
-                    onClick={() => {
-                      onRecallMessage?.(message);
-                      onClose?.();
-                    }}
+                    onClick={closeAfter(onRecallMessage)}
                   >
                     Thu hồi tệp
                   </button>
-                  {hasGroupedItems && (
+                  {hasGroupedItems ? (
                     <button
                       type="button"
                       className="message-action-item"
-                      onClick={() => {
-                        onRecallMessageGroup?.(message);
-                        onClose?.();
-                      }}
+                      onClick={closeAfter(onRecallMessageGroup)}
                     >
                       Thu hồi tất cả tệp
                     </button>
-                  )}
+                  ) : null}
                 </>
-              )}
-              {canDeleteForMe && (
+              ) : null}
+              {canDeleteForMe ? (
                 <>
                   <button
                     type="button"
                     className="message-action-item"
-                    onClick={() => {
-                      onDeleteMessage?.(message);
-                      onClose?.();
-                    }}
+                    onClick={closeAfter(onDeleteMessage)}
                   >
                     Xóa tệp với tôi
                   </button>
-                  {hasGroupedItems && (
+                  {hasGroupedItems ? (
                     <button
                       type="button"
                       className="message-action-item"
-                      onClick={() => {
-                        onDeleteMessageGroup?.(message);
-                        onClose?.();
-                      }}
+                      onClick={closeAfter(onDeleteMessageGroup)}
                     >
                       Xóa tất cả tệp với tôi
                     </button>
-                  )}
+                  ) : null}
                 </>
-              )}
+              ) : null}
             </>
           ) : (
             <>
               <button
                 type="button"
                 className="message-action-item"
-                onClick={() => {
-                  onReplyMessage?.(message);
-                  onClose?.();
-                }}
+                onClick={closeAfter(onReplyMessage)}
               >
                 Trả lời
               </button>
               <button
                 type="button"
                 className="message-action-item"
-                onClick={() => {
-                  onCopyMessage?.(message);
-                  onClose?.();
-                }}
+                onClick={closeAfter(onCopyMessage)}
               >
                 Sao chép tin nhắn
               </button>
-              {canRecall && (
+              {forwardButton}
+              {canRecall ? (
                 <button
                   type="button"
                   className="message-action-item"
-                  onClick={() => {
-                    onRecallMessage?.(message);
-                    onClose?.();
-                  }}
+                  onClick={closeAfter(onRecallMessage)}
                 >
                   Thu hồi tin nhắn
                 </button>
-              )}
-              {canDeleteForMe && (
+              ) : null}
+              {canDeleteForMe ? (
                 <button
                   type="button"
                   className="message-action-item"
-                  onClick={() => {
-                    onDeleteMessage?.(message);
-                    onClose?.();
-                  }}
+                  onClick={closeAfter(onDeleteMessage)}
                 >
                   Xóa với tôi
                 </button>
-              )}
+              ) : null}
             </>
           )}
         </div>

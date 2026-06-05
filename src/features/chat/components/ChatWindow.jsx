@@ -50,6 +50,7 @@ function ChatWindow({
   handleRecallMessageGroup,
   handleDeleteMessage,
   handleDeleteMessageGroup,
+  onForwardMessage,
   onStartAudioCall,
   onStartVideoCall,
   onOpenAddMembers,
@@ -489,6 +490,7 @@ function ChatWindow({
         onCopyImage={copyImageMessage}
         onDownloadImage={downloadAttachmentMessage}
         onDownloadFile={downloadAttachmentMessage}
+        onForwardMessage={onForwardMessage}
         onVotePoll={onVotePoll}
         votingPollId={votingPollId}
         onRecallMessage={handleRecallMessage}

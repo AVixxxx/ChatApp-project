@@ -193,6 +193,7 @@ function MessageList({
   onCopyImage,
   onDownloadImage,
   onDownloadFile,
+  onForwardMessage,
   onVotePoll,
   votingPollId,
   onRecallMessage,
@@ -297,6 +298,7 @@ function MessageList({
                       onCopyImage={onCopyImage}
                       onDownloadImage={onDownloadImage}
                       onDownloadFile={onDownloadFile}
+                      onForwardMessage={onForwardMessage}
                       onRecallMessage={onRecallMessage}
                       onRecallMessageGroup={onRecallMessageGroup}
                       onDeleteMessage={onDeleteMessage}
@@ -304,6 +306,9 @@ function MessageList({
                     />
 
                     <div className={`message ${isMe ? "me" : "other"} ${messageType === "image" ? "image-message" : ""} ${isRecalled ? "message-recalled" : ""}`}>
+                      {latestMessage?.isForwarded ? (
+                        <div className="message-forwarded-badge">Forwarded</div>
+                      ) : null}
                       {replyPreview && (
                         <button
                           type="button"
